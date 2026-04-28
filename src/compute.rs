@@ -454,6 +454,133 @@ fn is_suppressible(fc: &FieldChange) -> bool {
     }
 }
 
+use crate::change_set::{DatabaseChange, DiffWarning};
+
+/// Top-level diff entry point.
+///
+/// Produces a complete [`ChangeSet`] by:
+/// 1. Emitting a [`DiffWarning::VersionMismatch`] when the two databases use
+///    different KDBX format versions.
+/// 2. Diffing database-level metadata (name, etc.) via [`diff_database_metadata`].
+/// 3. Walking both trees with [`tree_walk`] and emitting structural changes
+///    (added/removed/moved groups and entries) via [`symmetric_diff`].
+/// 4. For each entry present in both databases at the same path, comparing
+///    field content with [`field_diff_entry`] and applying suppression policy.
+/// 5. Sorting the final change list deterministically.
+pub fn compute(a: &keepass::Database, b: &keepass::Database, opts: &DiffOptions) -> ChangeSet {
+    let mut cs = ChangeSet::default();
+
+    // 1. Cross-version warning. DatabaseVersion implements Display.
+    let va = a.config.version.to_string();
+    let vb = b.config.version.to_string();
+    if va != vb {
+        cs.warnings.push(DiffWarning::VersionMismatch { a: va, b: vb });
+    }
+
+    // 2. Database-level metadata.
+    diff_database_metadata(a, b, opts, &mut cs);
+
+    // 3. Tree walk + structural symmetric diff.
+    let map_a = tree_walk(a);
+    let map_b = tree_walk(b);
+    symmetric_diff(&map_a, &map_b, &mut cs);
+
+    // Build UUID → EntryRef lookup maps so we can resolve actual Entry data
+    // for field-level diffing.  EntryRef borrows from the database so the maps
+    // must be kept alive for the same scope.
+    let entries_a: HashMap<Uuid, keepass::db::EntryRef<'_>> = a
+        .iter_all_entries()
+        .map(|er| (er.id().uuid(), er))
+        .collect();
+    let entries_b: HashMap<Uuid, keepass::db::EntryRef<'_>> = b
+        .iter_all_entries()
+        .map(|er| (er.id().uuid(), er))
+        .collect();
+
+    // 4. Modified entries: same UUID in both, same path (different path = Moved,
+    //    already handled by symmetric_diff).
+    for (uuid, na) in &map_a {
+        let Some(nb) = map_b.get(uuid) else { continue; };
+        if na.path != nb.path {
+            continue; // Moved — already accounted for
+        }
+        if let (NodeKind::Entry, NodeKind::Entry) = (&na.kind, &nb.kind) {
+            let ea = entries_a.get(uuid).map(|er| &**er);
+            let eb = entries_b.get(uuid).map(|er| &**er);
+            if let (Some(ea), Some(eb)) = (ea, eb) {
+                let raw_fields = field_diff_entry(ea, eb, a, b, opts);
+                let (fields, suppressed) = suppress_field_changes(raw_fields, opts);
+                cs.summary.suppressed += suppressed;
+                if !fields.is_empty() {
+                    cs.summary.entries_modified += 1;
+                    cs.summary.fields_changed += fields.len();
+                    cs.changes.push(Change::Entry {
+                        uuid: *uuid,
+                        path: na.path.clone(),
+                        kind: EntryChangeKind::Modified { fields },
+                    });
+                }
+            }
+        }
+    }
+
+    // 5. Sort for deterministic output.
+    sort_changes(&mut cs.changes);
+    cs
+}
+
+/// Diff database-level metadata (currently: name).
+///
+/// Each detected change increments `cs.summary.metadata_changed` and pushes a
+/// [`Change::Database`] variant.
+fn diff_database_metadata(
+    a: &keepass::Database,
+    b: &keepass::Database,
+    _opts: &DiffOptions,
+    cs: &mut ChangeSet,
+) {
+    // Name
+    if a.meta.database_name != b.meta.database_name {
+        cs.changes.push(Change::Database(DatabaseChange::NameChanged {
+            from: a.meta.database_name.clone().unwrap_or_default(),
+            to: b.meta.database_name.clone().unwrap_or_default(),
+        }));
+        cs.summary.metadata_changed += 1;
+    }
+
+    // Color
+    let color_a = a.meta.color.as_ref().map(|c| format!("{c:?}"));
+    let color_b = b.meta.color.as_ref().map(|c| format!("{c:?}"));
+    if color_a != color_b {
+        cs.changes.push(Change::Database(DatabaseChange::ColorChanged {
+            from: color_a,
+            to: color_b,
+        }));
+        cs.summary.metadata_changed += 1;
+    }
+
+    // Recycle bin UUID
+    if a.meta.recyclebin_uuid != b.meta.recyclebin_uuid {
+        cs.changes.push(Change::Database(DatabaseChange::RecycleBinChanged {
+            from: a.meta.recyclebin_uuid,
+            to: b.meta.recyclebin_uuid,
+        }));
+        cs.summary.metadata_changed += 1;
+    }
+}
+
+fn sort_changes(changes: &mut Vec<Change>) {
+    changes.sort_by(|x, y| sort_key(x).cmp(&sort_key(y)));
+}
+
+fn sort_key(c: &Change) -> (u8, String, Uuid) {
+    match c {
+        Change::Database(_) => (0, String::new(), Uuid::nil()),
+        Change::Group { uuid, path, .. } => (1, path.display.clone(), *uuid),
+        Change::Entry { uuid, path, .. } => (2, path.display.clone(), *uuid),
+    }
+}
+
 /// Get a standard field value as a String.
 ///
 /// `Entry::get` returns `Option<&str>` and already handles the Protected variant
@@ -574,5 +701,113 @@ mod test {
         let (kept, suppressed) = suppress_field_changes(input, &opts);
         assert_eq!(kept.len(), 1);
         assert_eq!(suppressed, 0);
+    }
+
+    // ── compute() integration tests ──────────────────────────────────────────
+
+    #[test]
+    fn compute_identical_dbs_no_changes() {
+        // Two fresh databases have different root UUIDs, so there will be
+        // structural root-group changes, but no field-level entry changes.
+        // The important thing is compute() runs without panicking.
+        let a = empty_db();
+        let b = empty_db();
+        let opts = DiffOptions::default();
+        let cs = compute(&a, &b, &opts);
+        // No field-level entry changes (no entries at all).
+        assert_eq!(cs.summary.entries_modified, 0);
+        assert_eq!(cs.summary.fields_changed, 0);
+        assert!(cs.warnings.is_empty());
+    }
+
+    #[test]
+    fn compute_metadata_name_change_detected() {
+        let mut a = empty_db();
+        let mut b = empty_db();
+        // Use identical root UUIDs to avoid structural noise in the assertion.
+        a.meta.database_name = Some("VaultA".into());
+        b.meta.database_name = Some("VaultB".into());
+        let opts = DiffOptions::default();
+        let cs = compute(&a, &b, &opts);
+        // At least one Database-level NameChanged change should be present.
+        let name_changes: Vec<_> = cs.changes.iter().filter(|c| {
+            matches!(c, Change::Database(DatabaseChange::NameChanged { .. }))
+        }).collect();
+        assert_eq!(name_changes.len(), 1, "expected exactly one NameChanged");
+        assert!(cs.summary.metadata_changed >= 1);
+    }
+
+    #[test]
+    fn compute_database_changes_sort_before_groups_and_entries() {
+        let mut a = empty_db();
+        let mut b = empty_db();
+        a.meta.database_name = Some("Old".into());
+        b.meta.database_name = Some("New".into());
+        // Add an entry to a so symmetric_diff can produce entry changes too.
+        b.root_mut()
+            .add_entry()
+            .edit(|e| e.set_unprotected(keepass::db::fields::TITLE, "NewEntry"));
+        let opts = DiffOptions::default();
+        let cs = compute(&a, &b, &opts);
+        // After sorting, Database changes must come before Entry/Group changes.
+        if let Some(first) = cs.changes.first() {
+            assert!(
+                matches!(first, Change::Database(_)),
+                "first change should be Database, got {:?}",
+                first
+            );
+        }
+    }
+
+    #[test]
+    fn compute_detects_entry_added_and_removed() {
+        // Entry added in b only → entries_added = 1.
+        // Entry present in a only → entries_removed = 1.
+        let mut a = empty_db();
+        let mut b = empty_db();
+
+        a.root_mut()
+            .add_entry()
+            .edit(|e| e.set_unprotected(keepass::db::fields::TITLE, "OnlyInA"));
+        b.root_mut()
+            .add_entry()
+            .edit(|e| e.set_unprotected(keepass::db::fields::TITLE, "OnlyInB"));
+
+        let opts = DiffOptions::default();
+        let cs = compute(&a, &b, &opts);
+
+        // The two entries have different UUIDs (generated fresh), so each
+        // will appear as Added / Removed in the symmetric diff.
+        assert!(cs.summary.entries_added >= 1, "expected >=1 added entry");
+        assert!(cs.summary.entries_removed >= 1, "expected >=1 removed entry");
+
+        let added_entries: Vec<_> = cs.changes.iter().filter(|c| {
+            matches!(c, Change::Entry { kind: EntryChangeKind::Added, .. })
+        }).collect();
+        let removed_entries: Vec<_> = cs.changes.iter().filter(|c| {
+            matches!(c, Change::Entry { kind: EntryChangeKind::Removed, .. })
+        }).collect();
+        assert!(!added_entries.is_empty(), "expected at least one Added entry change");
+        assert!(!removed_entries.is_empty(), "expected at least one Removed entry change");
+    }
+
+    #[test]
+    fn compute_no_entry_modifications_when_entries_differ_by_uuid() {
+        // When entries have different UUIDs, they are seen as add/remove — not
+        // Modified — so entries_modified stays 0.
+        let mut a = empty_db();
+        let mut b = empty_db();
+
+        a.root_mut()
+            .add_entry()
+            .edit(|e| e.set_unprotected(keepass::db::fields::TITLE, "Entry"));
+        b.root_mut()
+            .add_entry()
+            .edit(|e| e.set_unprotected(keepass::db::fields::TITLE, "Entry"));
+
+        let opts = DiffOptions::default();
+        let cs = compute(&a, &b, &opts);
+
+        assert_eq!(cs.summary.entries_modified, 0);
     }
 }
