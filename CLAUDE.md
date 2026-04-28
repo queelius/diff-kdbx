@@ -36,17 +36,31 @@ src/
 
 - `docs/superpowers/specs/2026-04-27-diff-kdbx-design.md`: full design rationale, motivation, non-goals, error policy.
 - `docs/superpowers/plans/2026-04-27-diff-kdbx.md`: 29-task implementation plan with TDD steps.
+- `docs/testing.md`: test pyramid (5 layers), how to run, fixture management.
+- `tests/fixtures/MANIFEST.md`: provenance for every committed fixture (origin, password, contents, regen procedure).
 
 Read the spec before making design-level changes. Read the plan before adding new modules so file-structure stays consistent.
 
 ## Build and test
 
 ```bash
-cargo test --lib                    # 47 unit tests (foundation, compute, dump, render, mask, path)
-cargo test --features cli           # + 8 integration + 3 determinism, total 58
+cargo test --lib                    # Layer 1: 47 unit tests (no I/O)
+cargo test --features cli           # Layers 1-5: 66 active tests, 2 ignored
 cargo build --features cli          # CLI binary
-cargo run --features cli --bin gen-fixtures   # regenerate test fixtures (deterministic master pw "test-password-do-not-use")
+cargo run --features cli --bin gen-fixtures   # regenerate synthetic fixtures (master pw "test-password-do-not-use")
 ```
+
+The five test layers (see `docs/testing.md` for the full pyramid):
+
+| Layer | Suite | Count |
+|---|---|---|
+| 1 | `cargo test --lib` (in-tree unit tests) | 47 |
+| 2 | `tests/integration.rs` (CLI end-to-end) | 8 + 2 ignored |
+| 3 | `tests/determinism.rs` (cross-process byte-stability) | 3 |
+| 4 | `tests/git_driver.rs` (real git in tempdirs) | 5 |
+| 5 | `tests/remote_roundtrip.rs` (bare-repo-as-remote) | 3 |
+
+External dependencies for the full suite: `cargo` and `git`. No `gh`, no network, no test repos to provision.
 
 WASM build smoke check (lib only):
 
