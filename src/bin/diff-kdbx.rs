@@ -69,6 +69,59 @@ enum Format {
     Json,
 }
 
+mod key {
+    use anyhow::{anyhow, Context, Result};
+    use std::io::IsTerminal;
+    use std::path::{Path, PathBuf};
+
+    #[derive(Debug, Clone)]
+    pub struct ResolvedKey {
+        pub password: Option<String>,
+        pub key_file: Option<PathBuf>,
+    }
+
+    /// Resolve a key for a given role (e.g., "A" or "B" or shared "").
+    /// Order: explicit key file flag, then env var, then TTY prompt
+    /// (only if `interactive_allowed`).
+    pub fn resolve(
+        key_file_explicit: Option<&Path>,
+        env_var: &str,
+        prompt_label: &str,
+        interactive_allowed: bool,
+    ) -> Result<ResolvedKey> {
+        let key_file = key_file_explicit.map(|p| p.to_path_buf());
+        if let Ok(p) = std::env::var(env_var) {
+            return Ok(ResolvedKey { password: Some(p), key_file });
+        }
+        if interactive_allowed && std::io::stdin().is_terminal() {
+            let p = rpassword::prompt_password(format!("Password for {}: ", prompt_label))
+                .context("reading password from TTY")?;
+            return Ok(ResolvedKey { password: Some(p), key_file });
+        }
+        // No password source. If a key file alone suffices, return that.
+        if key_file.is_some() {
+            return Ok(ResolvedKey { password: None, key_file });
+        }
+        Err(anyhow!(
+            "no key source for {}: set {}, pass --key-file, or run interactively",
+            prompt_label, env_var
+        ))
+    }
+
+    /// Build a keepass DatabaseKey from the resolved parts.
+    pub fn build_db_key(rk: &ResolvedKey) -> Result<keepass::DatabaseKey> {
+        let mut k = keepass::DatabaseKey::new();
+        if let Some(p) = &rk.password {
+            k = k.with_password(p);
+        }
+        if let Some(path) = &rk.key_file {
+            let data = std::fs::read(path).with_context(|| format!("reading key file {}", path.display()))?;
+            k = k.with_keyfile(&mut std::io::Cursor::new(data))?;
+        }
+        Ok(k)
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     if cli.textconv.is_some() {
