@@ -32,6 +32,32 @@ pub struct ValueChange {
     pub to: ValueDisplay,
 }
 
+/// A single field-level change inside a modified entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FieldChange {
+    /// A field that did not exist in `a` and exists in `b`.
+    Added { name: String, value: ValueDisplay },
+    /// A field that existed in `a` and does not exist in `b`.
+    Removed { name: String, value: ValueDisplay },
+    /// A field that exists in both with different content.
+    Modified { name: String, change: ValueChange },
+    /// A tag added to the entry.
+    TagAdded { tag: String },
+    /// A tag removed from the entry.
+    TagRemoved { tag: String },
+    /// Attachment with a given name was added.
+    AttachmentAdded { name: String, hash: HashPrefix },
+    /// Attachment was removed.
+    AttachmentRemoved { name: String, hash: HashPrefix },
+    /// Attachment with the same name has different content.
+    AttachmentModified { name: String, from_hash: HashPrefix, to_hash: HashPrefix },
+    /// Per-entry history grew (entry was modified, previous state pushed).
+    HistoryGrew { added: usize },
+    /// Per-entry history shrank or non-prefix-extended (suspicious).
+    HistoryRewritten { from_len: usize, to_len: usize },
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -63,5 +89,30 @@ mod test {
             ValueDisplay::Plain { value } => assert_eq!(value, "hunter2"),
             _ => panic!("expected Plain when show_secrets=true"),
         }
+    }
+
+    #[test]
+    fn field_change_added_serializes() {
+        let fc = FieldChange::Added {
+            name: "Title".into(),
+            value: ValueDisplay::Plain { value: "Chase".into() },
+        };
+        let json = serde_json::to_string(&fc).unwrap();
+        assert!(json.contains("\"kind\":\"added\""));
+        assert!(json.contains("\"name\":\"Title\""));
+    }
+
+    #[test]
+    fn field_change_modified_with_masked_value() {
+        let fc = FieldChange::Modified {
+            name: "Password".into(),
+            change: ValueChange {
+                from: ValueDisplay::Masked { hash: HashPrefix::of("a") },
+                to: ValueDisplay::Masked { hash: HashPrefix::of("b") },
+            },
+        };
+        let json = serde_json::to_string(&fc).unwrap();
+        assert!(json.contains("\"kind\":\"modified\""));
+        assert!(json.contains("\"masked\""));
     }
 }
