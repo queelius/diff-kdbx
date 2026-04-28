@@ -5,7 +5,7 @@
 
 use crate::change_set::ValueDisplay;
 use crate::compute::{tree_walk, NodeKind};
-use crate::options::DumpOptions;
+use crate::options::{DiffOptions, DumpOptions};
 use crate::path::Path;
 use std::fmt::Write as _;
 use uuid::Uuid;
@@ -38,8 +38,17 @@ fn dump_header(db: &keepass::Database, out: &mut String) {
 ///
 /// Uses `tree_walk` (which visits the whole tree) and sorts nodes by their
 /// display path, so a small database edit produces a small line diff.
+/// When `opts.include_recycle_bin` is false, the recycle bin and its
+/// descendants are omitted.
 fn dump_groups(db: &keepass::Database, opts: &DumpOptions, out: &mut String) {
-    let map = tree_walk(db);
+    // Build a DiffOptions that carries the include_recycle_bin flag so
+    // tree_walk can apply the suppression consistently.
+    let walk_opts = DiffOptions {
+        strict: opts.strict,
+        show_secrets: opts.show_secrets,
+        include_recycle_bin: opts.include_recycle_bin,
+    };
+    let map = tree_walk(db, &walk_opts);
     let mut keys: Vec<&Uuid> = map.keys().collect();
     // Sort by display path for a stable, human-readable ordering.
     keys.sort_by(|a, b| {
@@ -167,5 +176,47 @@ mod test {
         let s1 = dump(&db, &DumpOptions::default());
         let s2 = dump(&db, &DumpOptions::default());
         assert_eq!(s1, s2);
+    }
+
+    /// Build a database with one live entry and a recycle bin group containing
+    /// a trashed entry. Used by the suppression tests below.
+    fn db_with_recycle_bin() -> keepass::Database {
+        let mut db = keepass::Database::new();
+        db.root_mut()
+            .add_entry()
+            .edit(|e| e.set_unprotected(keepass::db::fields::TITLE, "Live"));
+        let rb_id = db
+            .root_mut()
+            .add_group()
+            .edit(|g| g.name = "Recycle Bin".into())
+            .id();
+        db.group_mut(rb_id)
+            .unwrap()
+            .add_entry()
+            .edit(|e| e.set_unprotected(keepass::db::fields::TITLE, "Trashed"));
+        db.meta.recyclebin_uuid = Some(rb_id.uuid());
+        db
+    }
+
+    #[test]
+    fn dump_hides_recycle_bin_by_default() {
+        let db = db_with_recycle_bin();
+        let s = dump(&db, &DumpOptions::default());
+        assert!(s.contains("Live"), "Live entry should appear in dump");
+        assert!(!s.contains("Trashed"), "Trashed entry should be suppressed by default");
+        // The recycle bin group line looks like "GROUP .../Recycle Bin".
+        assert!(
+            !s.lines().any(|l| l.starts_with("GROUP") && l.ends_with("Recycle Bin")),
+            "Recycle Bin group should be suppressed"
+        );
+    }
+
+    #[test]
+    fn dump_shows_recycle_bin_when_opted_in() {
+        let db = db_with_recycle_bin();
+        let opts = DumpOptions { include_recycle_bin: true, ..DumpOptions::default() };
+        let s = dump(&db, &opts);
+        assert!(s.contains("Trashed"), "Trashed entry should appear with include_recycle_bin = true");
+        assert!(s.contains("Recycle Bin"), "Recycle Bin group should appear with include_recycle_bin = true");
     }
 }

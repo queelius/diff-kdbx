@@ -62,6 +62,11 @@ struct Cli {
     /// Use ANSI color in text output. Defaults to off.
     #[arg(long)]
     color: bool,
+
+    /// Include the recycle bin group and its contents in diff/dump output.
+    /// By default, the recycle bin is hidden to reduce noise.
+    #[arg(long)]
+    include_recycle_bin: bool,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -158,6 +163,7 @@ fn run_textconv(cli: Cli) -> anyhow::Result<()> {
     let opts = diff_kdbx::options::DumpOptions {
         strict: cli.strict,
         show_secrets: cli.show_secrets,
+        include_recycle_bin: cli.include_recycle_bin,
     };
     let s = diff_kdbx::dump::dump(&db, &opts);
     // Buffer-then-write so stdout stays all-or-nothing.
@@ -180,6 +186,7 @@ fn run_dump(cli: Cli) -> anyhow::Result<()> {
     let opts = diff_kdbx::options::DumpOptions {
         strict: cli.strict,
         show_secrets: cli.show_secrets,
+        include_recycle_bin: cli.include_recycle_bin,
     };
     let s = diff_kdbx::dump::dump(&db, &opts);
     print!("{}", s);
@@ -226,6 +233,7 @@ fn run_standalone(cli: Cli) -> anyhow::Result<()> {
     let opts = diff_kdbx::options::DiffOptions {
         strict: cli.strict,
         show_secrets: cli.show_secrets,
+        include_recycle_bin: cli.include_recycle_bin,
     };
     let cs = diff_kdbx::compute::compute(&db_a, &db_b, &opts);
 
