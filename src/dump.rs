@@ -3,8 +3,12 @@
 //! The dump format must be deterministic and produce localized changes for localized edits.
 //! Each line is independently diffable. Indentation is 2 spaces.
 
+use crate::change_set::ValueDisplay;
+use crate::compute::{tree_walk, NodeKind};
 use crate::options::DumpOptions;
+use crate::path::Path;
 use std::fmt::Write as _;
+use uuid::Uuid;
 
 /// Generate a stable text representation of a KDBX database.
 ///
@@ -30,10 +34,112 @@ fn dump_header(db: &keepass::Database, out: &mut String) {
     let _ = writeln!(out, "  recycle_bin: {}", bin);
 }
 
-/// Emit all groups and entries (recursively from root).
+/// Emit all groups and entries in path-sorted order.
 ///
-/// Stub for Task 17. Real impl will recurse through groups.
-fn dump_groups(_db: &keepass::Database, _opts: &DumpOptions, _out: &mut String) {}
+/// Uses `tree_walk` (which visits the whole tree) and sorts nodes by their
+/// display path, so a small database edit produces a small line diff.
+fn dump_groups(db: &keepass::Database, opts: &DumpOptions, out: &mut String) {
+    let map = tree_walk(db);
+    let mut keys: Vec<&Uuid> = map.keys().collect();
+    // Sort by display path for a stable, human-readable ordering.
+    keys.sort_by(|a, b| {
+        let pa = &map[a].path.display;
+        let pb = &map[b].path.display;
+        pa.cmp(pb)
+    });
+    for uuid in keys {
+        let node = &map[uuid];
+        match node.kind {
+            NodeKind::Group => {
+                let _ = writeln!(out, "GROUP {}", node.path.display);
+            }
+            NodeKind::Entry => {
+                // Resolve the EntryRef so we can both read Entry fields (via Deref)
+                // and call EntryRef::attachments() for an accurate attachment count
+                // (entry.attachments is pub(crate) and not directly accessible here).
+                if let Some(er) = lookup_entry_ref(db, *uuid) {
+                    dump_entry(&er, *uuid, &node.path, opts, out);
+                }
+            }
+        }
+    }
+}
+
+/// Find an `EntryRef` by UUID.  Returns `None` if the UUID is not present
+/// (should never happen in practice since the UUID came from `tree_walk`).
+fn lookup_entry_ref(db: &keepass::Database, uuid: Uuid) -> Option<keepass::db::EntryRef<'_>> {
+    db.iter_all_entries().find(|er| er.id().uuid() == uuid)
+}
+
+/// Emit one entry block.
+///
+/// Fields are emitted in a fixed order so that a single-field change produces
+/// a single changed line in `git diff --word-diff`.
+fn dump_entry(
+    er: &keepass::db::EntryRef<'_>,
+    uuid: Uuid,
+    path: &Path,
+    opts: &DumpOptions,
+    out: &mut String,
+) {
+    // Use the first 8 hex chars as a short UUID tag.
+    let short = &uuid.to_string()[..8];
+    let _ = writeln!(out, "ENTRY {} [uuid:{}]", path.display, short);
+
+    // Standard KeePass fields in a canonical order.
+    for &name in &["Title", "UserName", "Password", "URL", "Notes"] {
+        let raw = er.get(name).unwrap_or("").to_string();
+        // Password is always treated as protected; other fields defer to the
+        // Value::is_protected() flag stored in entry.fields.
+        let protected = name == "Password"
+            || er.fields.get(name).map(|v| v.is_protected()).unwrap_or(false);
+        let display = ValueDisplay::from_value(&raw, protected, opts.show_secrets);
+        match display {
+            ValueDisplay::Plain { value } => {
+                let _ = writeln!(out, "  {}: {}", name.to_lowercase(), value);
+            }
+            ValueDisplay::Masked { hash } => {
+                let _ = writeln!(out, "  {}: <hash:{}>", name.to_lowercase(), hash);
+            }
+        }
+    }
+
+    // Tags (sorted for stability).
+    if !er.tags.is_empty() {
+        let mut tags = er.tags.clone();
+        tags.sort();
+        let _ = writeln!(out, "  tags: {}", tags.join(", "));
+    }
+
+    // Attachment count via EntryRef::attachments() — public iterator that
+    // avoids the pub(crate) entry.attachments field.
+    let att_count = er.attachments().count();
+    let _ = writeln!(out, "  attachments: {}", att_count);
+
+    // History length.
+    let hist_len = er.history.as_ref().map(|h| h.get_entries().len()).unwrap_or(0);
+    let _ = writeln!(out, "  history: {} entries", hist_len);
+
+    // Modification timestamp (omitted in --strict mode to reduce noise).
+    // Times.last_modification is pub Option<NaiveDateTime> in keepass 0.12.
+    if !opts.strict {
+        if let Some(t) = entry_modification_time(er) {
+            let _ = writeln!(out, "  modified: {}", t);
+        }
+    }
+}
+
+/// Format the `LastModification` timestamp of an entry as an RFC 3339-style
+/// string (without timezone, since KDBX stores naive datetimes).
+///
+/// `entry.times.last_modification` is `pub Option<NaiveDateTime>` in
+/// keepass 0.12, so this is a direct field access, no accessor needed.
+fn entry_modification_time(entry: &keepass::db::Entry) -> Option<String> {
+    entry
+        .times
+        .last_modification
+        .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+}
 
 #[cfg(test)]
 mod test {
@@ -53,5 +159,13 @@ mod test {
         let db = keepass::Database::new();
         let s = dump(&db, &DumpOptions::default());
         assert!(s.contains("  name:"), "dump should contain name field");
+    }
+
+    #[test]
+    fn dump_is_byte_stable_across_calls() {
+        let db = keepass::Database::new();
+        let s1 = dump(&db, &DumpOptions::default());
+        let s2 = dump(&db, &DumpOptions::default());
+        assert_eq!(s1, s2);
     }
 }
