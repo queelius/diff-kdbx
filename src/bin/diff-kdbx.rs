@@ -123,7 +123,15 @@ mod key {
     }
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() {
+    // Exit codes: 0 = no changes, 1 = changes found, 2 = error.
+    if let Err(e) = run() {
+        eprintln!("Error: {e:#}");
+        std::process::exit(2);
+    }
+}
+
+fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
     if cli.textconv.is_some() {
         run_textconv(cli)
