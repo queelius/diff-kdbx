@@ -9,11 +9,14 @@ pub struct DiffOptions {
     pub strict: bool,
     /// If true, ChangeSet contains plaintext for protected fields. Default false.
     pub show_secrets: bool,
+    /// If true, include the recycle bin group and its descendants in the diff.
+    /// Default false: the recycle bin is hidden from output.
+    pub include_recycle_bin: bool,
 }
 
 impl Default for DiffOptions {
     fn default() -> Self {
-        Self { strict: false, show_secrets: false }
+        Self { strict: false, show_secrets: false, include_recycle_bin: false }
     }
 }
 
@@ -22,11 +25,14 @@ impl Default for DiffOptions {
 pub struct DumpOptions {
     pub strict: bool,
     pub show_secrets: bool,
+    /// If true, include the recycle bin group and its descendants in the dump.
+    /// Default false: the recycle bin is hidden from output.
+    pub include_recycle_bin: bool,
 }
 
 impl Default for DumpOptions {
     fn default() -> Self {
-        Self { strict: false, show_secrets: false }
+        Self { strict: false, show_secrets: false, include_recycle_bin: false }
     }
 }
 
@@ -52,6 +58,7 @@ mod test {
         let o = DiffOptions::default();
         assert!(!o.strict);
         assert!(!o.show_secrets);
+        assert!(!o.include_recycle_bin);
     }
 
     #[test]
@@ -59,6 +66,7 @@ mod test {
         let o = DumpOptions::default();
         assert!(!o.strict);
         assert!(!o.show_secrets);
+        assert!(!o.include_recycle_bin);
     }
 
     #[test]

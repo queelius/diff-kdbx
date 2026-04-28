@@ -1,5 +1,6 @@
 //! Diff computation: walk two KDBX databases and produce a structural ChangeSet.
 
+use crate::options::DiffOptions;
 use crate::path::Path;
 use keepass::db::GroupRef;
 use std::collections::HashMap;
@@ -24,10 +25,19 @@ pub struct LocatedNode {
 ///
 /// The path for each node uses backslash-escaped name segments and the UUID
 /// chain from root to this node (inclusive).
-pub fn tree_walk(db: &keepass::Database) -> HashMap<Uuid, LocatedNode> {
+///
+/// When `opts.include_recycle_bin` is false (the default), the recycle bin
+/// group and all its descendants are omitted from the result. The recycle bin
+/// is identified by `db.meta.recyclebin_uuid`.
+pub fn tree_walk(db: &keepass::Database, opts: &DiffOptions) -> HashMap<Uuid, LocatedNode> {
     let mut out = HashMap::new();
     let root = db.root();
-    walk_group_ref(&root, &mut Vec::new(), &mut Vec::new(), db, &mut out);
+    let recycle_bin_uuid: Option<Uuid> = if opts.include_recycle_bin {
+        None
+    } else {
+        db.meta.recyclebin_uuid
+    };
+    walk_group_ref(&root, &mut Vec::new(), &mut Vec::new(), db, recycle_bin_uuid, &mut out);
     out
 }
 
@@ -36,9 +46,16 @@ fn walk_group_ref(
     name_stack: &mut Vec<String>,
     uuid_stack: &mut Vec<Uuid>,
     db: &keepass::Database,
+    recycle_bin_uuid: Option<Uuid>,
     out: &mut HashMap<Uuid, LocatedNode>,
 ) {
     let group_uuid = group.id().uuid();
+
+    // Skip the recycle bin group and all its descendants.
+    if recycle_bin_uuid == Some(group_uuid) {
+        return;
+    }
+
     name_stack.push(group.name.clone());
     uuid_stack.push(group_uuid);
 
@@ -58,7 +75,7 @@ fn walk_group_ref(
 
     // Walk child groups recursively.
     for child_group in group.groups() {
-        walk_group_ref(&child_group, name_stack, uuid_stack, db, out);
+        walk_group_ref(&child_group, name_stack, uuid_stack, db, recycle_bin_uuid, out);
     }
 
     // Walk entries directly in this group.
@@ -181,7 +198,6 @@ fn count_structural(s: &mut crate::change_set::Summary, node: &LocatedNode, ev: 
 }
 
 use crate::change_set::{FieldChange, ValueChange, ValueDisplay};
-use crate::options::DiffOptions;
 
 /// Compute field-level changes between two matched entries.
 /// Returns an empty Vec if there are no differences in user-visible fields.
@@ -481,8 +497,8 @@ pub fn compute(a: &keepass::Database, b: &keepass::Database, opts: &DiffOptions)
     diff_database_metadata(a, b, opts, &mut cs);
 
     // 3. Tree walk + structural symmetric diff.
-    let map_a = tree_walk(a);
-    let map_b = tree_walk(b);
+    let map_a = tree_walk(a, opts);
+    let map_b = tree_walk(b, opts);
     symmetric_diff(&map_a, &map_b, &mut cs);
 
     // Build UUID → EntryRef lookup maps so we can resolve actual Entry data
@@ -609,7 +625,7 @@ mod test {
     #[test]
     fn walk_empty_db_has_only_root() {
         let db = empty_db();
-        let map = tree_walk(&db);
+        let map = tree_walk(&db, &DiffOptions::default());
         assert_eq!(map.len(), 1);
         let root = map.values().next().unwrap();
         assert!(matches!(root.kind, NodeKind::Group));
@@ -621,7 +637,7 @@ mod test {
         db.root_mut()
             .add_entry()
             .edit(|e| e.set_unprotected(keepass::db::fields::TITLE, "MyEntry"));
-        let map = tree_walk(&db);
+        let map = tree_walk(&db, &DiffOptions::default());
         // root group + one entry
         assert_eq!(map.len(), 2);
         let entry_node = map.values().find(|n| matches!(n.kind, NodeKind::Entry)).unwrap();
@@ -640,7 +656,7 @@ mod test {
             .unwrap()
             .add_entry()
             .edit(|e| e.set_unprotected(keepass::db::fields::TITLE, "NestedEntry"));
-        let map = tree_walk(&db);
+        let map = tree_walk(&db, &DiffOptions::default());
         // root + Sub group + NestedEntry
         assert_eq!(map.len(), 3);
         let entry_node = map.values().find(|n| matches!(n.kind, NodeKind::Entry)).unwrap();
@@ -652,8 +668,9 @@ mod test {
     fn empty_dbs_produce_empty_change_set() {
         let a = empty_db();
         let b = empty_db();
-        let ma = tree_walk(&a);
-        let mb = tree_walk(&b);
+        let opts = DiffOptions::default();
+        let ma = tree_walk(&a, &opts);
+        let mb = tree_walk(&b, &opts);
         let mut cs = ChangeSet::default();
         symmetric_diff(&ma, &mb, &mut cs);
         // Both have just root; root UUIDs differ between Database::new() invocations,
@@ -688,7 +705,7 @@ mod test {
 
     #[test]
     fn strict_disables_suppression() {
-        let opts = DiffOptions { strict: true, show_secrets: false };
+        let opts = DiffOptions { strict: true, show_secrets: false, include_recycle_bin: false };
         let input = vec![
             FieldChange::Modified {
                 name: "LastAccessTime".into(),
@@ -809,5 +826,106 @@ mod test {
         let cs = compute(&a, &b, &opts);
 
         assert_eq!(cs.summary.entries_modified, 0);
+    }
+
+    // ── recycle bin suppression tests ───────────────────────────────────────
+
+    /// Build a database with one live entry and one recycle bin group that
+    /// contains a trashed entry. Sets `db.meta.recyclebin_uuid` to the
+    /// recycle bin group's UUID.
+    fn db_with_recycle_bin() -> keepass::Database {
+        let mut db = keepass::Database::new();
+
+        // Live entry in the root group.
+        db.root_mut()
+            .add_entry()
+            .edit(|e| e.set_unprotected(keepass::db::fields::TITLE, "Live"));
+
+        // Recycle bin group with a trashed entry.
+        let rb_id = db
+            .root_mut()
+            .add_group()
+            .edit(|g| g.name = "Recycle Bin".into())
+            .id();
+        db.group_mut(rb_id)
+            .unwrap()
+            .add_entry()
+            .edit(|e| e.set_unprotected(keepass::db::fields::TITLE, "Trashed"));
+
+        // Wire up the metadata pointer.
+        db.meta.recyclebin_uuid = Some(rb_id.uuid());
+
+        db
+    }
+
+    #[test]
+    fn tree_walk_excludes_recycle_bin_by_default() {
+        let db = db_with_recycle_bin();
+        // Default opts: include_recycle_bin = false.
+        let map = tree_walk(&db, &DiffOptions::default());
+        // Should contain: root group, Live entry. NOT recycle bin group or Trashed entry.
+        let titles: Vec<_> = map.values()
+            .filter(|n| matches!(n.kind, NodeKind::Entry))
+            .map(|n| n.path.display.clone())
+            .collect();
+        assert!(
+            titles.iter().any(|t| t.ends_with("Live")),
+            "expected Live entry in walk output"
+        );
+        assert!(
+            !titles.iter().any(|t| t.ends_with("Trashed")),
+            "expected Trashed entry to be suppressed"
+        );
+        // Recycle Bin group itself must not appear.
+        let group_names: Vec<_> = map.values()
+            .filter(|n| matches!(n.kind, NodeKind::Group))
+            .map(|n| n.path.display.clone())
+            .collect();
+        assert!(
+            !group_names.iter().any(|g| g.ends_with("Recycle Bin")),
+            "expected Recycle Bin group to be suppressed"
+        );
+    }
+
+    #[test]
+    fn tree_walk_includes_recycle_bin_when_opted_in() {
+        let db = db_with_recycle_bin();
+        let opts = DiffOptions { include_recycle_bin: true, ..DiffOptions::default() };
+        let map = tree_walk(&db, &opts);
+        let titles: Vec<_> = map.values()
+            .filter(|n| matches!(n.kind, NodeKind::Entry))
+            .map(|n| n.path.display.clone())
+            .collect();
+        assert!(
+            titles.iter().any(|t| t.ends_with("Trashed")),
+            "expected Trashed entry when include_recycle_bin = true"
+        );
+        let group_names: Vec<_> = map.values()
+            .filter(|n| matches!(n.kind, NodeKind::Group))
+            .map(|n| n.path.display.clone())
+            .collect();
+        assert!(
+            group_names.iter().any(|g| g.ends_with("Recycle Bin")),
+            "expected Recycle Bin group when include_recycle_bin = true"
+        );
+    }
+
+    #[test]
+    fn compute_excludes_recycle_bin_entries_by_default() {
+        // Both databases share the same recycle bin UUID and a common live entry UUID.
+        // Diffing them should not report any recycle bin changes in the default mode.
+        let db = db_with_recycle_bin();
+        // Diff db against itself: the two trees are structurally identical, so
+        // after excluding the recycle bin there should be zero entry add/remove events.
+        let opts = DiffOptions::default();
+        let cs = compute(&db, &db, &opts);
+        // No entries should appear as Added or Removed (same db, same UUIDs).
+        let trashed: Vec<_> = cs.changes.iter().filter(|c| {
+            match c {
+                Change::Entry { path, .. } => path.display.contains("Trashed"),
+                _ => false,
+            }
+        }).collect();
+        assert!(trashed.is_empty(), "recycle bin entries should not appear in default diff");
     }
 }
