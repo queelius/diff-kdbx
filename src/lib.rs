@@ -4,6 +4,7 @@
 //! `docs/superpowers/specs/2026-04-27-diff-kdbx-design.md` for the full design.
 
 pub mod change_set;
+pub mod compute;
 pub mod mask;
 pub mod options;
 pub mod path;
