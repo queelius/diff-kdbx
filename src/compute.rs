@@ -192,6 +192,8 @@ pub fn field_diff_entry(
 ) -> Vec<FieldChange> {
     let mut out = Vec::new();
     diff_standard_fields(a, b, opts, &mut out);
+    diff_custom_fields(a, b, opts, &mut out);
+    diff_tags(a, b, &mut out);
     out
 }
 
@@ -227,6 +229,66 @@ fn diff_standard_fields(
                 },
             }),
         }
+    }
+}
+
+fn diff_custom_fields(
+    a: &keepass::db::Entry,
+    b: &keepass::db::Entry,
+    opts: &DiffOptions,
+    out: &mut Vec<FieldChange>,
+) {
+    use std::collections::BTreeSet;
+    let a_keys: BTreeSet<&String> = a
+        .fields
+        .keys()
+        .filter(|k| !STANDARD_FIELDS.iter().any(|s| *s == k.as_str()))
+        .collect();
+    let b_keys: BTreeSet<&String> = b
+        .fields
+        .keys()
+        .filter(|k| !STANDARD_FIELDS.iter().any(|s| *s == k.as_str()))
+        .collect();
+
+    for key in a_keys.union(&b_keys) {
+        let av = entry_field_value(a, key);
+        let bv = entry_field_value(b, key);
+        let protected = entry_field_protected(a, key) || entry_field_protected(b, key);
+        match (av, bv) {
+            (None, None) => {}
+            (Some(v), None) => out.push(FieldChange::Removed {
+                name: (*key).clone(),
+                value: ValueDisplay::from_value(v.as_str(), protected, opts.show_secrets),
+            }),
+            (None, Some(v)) => out.push(FieldChange::Added {
+                name: (*key).clone(),
+                value: ValueDisplay::from_value(v.as_str(), protected, opts.show_secrets),
+            }),
+            (Some(va), Some(vb)) if va == vb => {}
+            (Some(va), Some(vb)) => out.push(FieldChange::Modified {
+                name: (*key).clone(),
+                change: ValueChange {
+                    from: ValueDisplay::from_value(va.as_str(), protected, opts.show_secrets),
+                    to: ValueDisplay::from_value(vb.as_str(), protected, opts.show_secrets),
+                },
+            }),
+        }
+    }
+}
+
+fn diff_tags(
+    a: &keepass::db::Entry,
+    b: &keepass::db::Entry,
+    out: &mut Vec<FieldChange>,
+) {
+    use std::collections::BTreeSet;
+    let a_tags: BTreeSet<&String> = a.tags.iter().collect();
+    let b_tags: BTreeSet<&String> = b.tags.iter().collect();
+    for tag in b_tags.difference(&a_tags) {
+        out.push(FieldChange::TagAdded { tag: (*tag).clone() });
+    }
+    for tag in a_tags.difference(&b_tags) {
+        out.push(FieldChange::TagRemoved { tag: (*tag).clone() });
     }
 }
 
