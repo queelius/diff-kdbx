@@ -180,6 +180,73 @@ fn count_structural(s: &mut crate::change_set::Summary, node: &LocatedNode, ev: 
     }
 }
 
+use crate::change_set::{FieldChange, ValueChange, ValueDisplay};
+use crate::options::DiffOptions;
+
+/// Compute field-level changes between two matched entries.
+/// Returns an empty Vec if there are no differences in user-visible fields.
+pub fn field_diff_entry(
+    a: &keepass::db::Entry,
+    b: &keepass::db::Entry,
+    opts: &DiffOptions,
+) -> Vec<FieldChange> {
+    let mut out = Vec::new();
+    diff_standard_fields(a, b, opts, &mut out);
+    out
+}
+
+const STANDARD_FIELDS: &[&str] = &["Title", "UserName", "Password", "URL", "Notes"];
+
+fn diff_standard_fields(
+    a: &keepass::db::Entry,
+    b: &keepass::db::Entry,
+    opts: &DiffOptions,
+    out: &mut Vec<FieldChange>,
+) {
+    for &name in STANDARD_FIELDS {
+        let av = entry_field_value(a, name);
+        let bv = entry_field_value(b, name);
+        let protected =
+            name == "Password" || entry_field_protected(a, name) || entry_field_protected(b, name);
+        match (av, bv) {
+            (None, None) => {}
+            (Some(v), None) => out.push(FieldChange::Removed {
+                name: name.into(),
+                value: ValueDisplay::from_value(v.as_str(), protected, opts.show_secrets),
+            }),
+            (None, Some(v)) => out.push(FieldChange::Added {
+                name: name.into(),
+                value: ValueDisplay::from_value(v.as_str(), protected, opts.show_secrets),
+            }),
+            (Some(va), Some(vb)) if va == vb => {}
+            (Some(va), Some(vb)) => out.push(FieldChange::Modified {
+                name: name.into(),
+                change: ValueChange {
+                    from: ValueDisplay::from_value(va.as_str(), protected, opts.show_secrets),
+                    to: ValueDisplay::from_value(vb.as_str(), protected, opts.show_secrets),
+                },
+            }),
+        }
+    }
+}
+
+/// Get a standard field value as a String.
+///
+/// `Entry::get` returns `Option<&str>` and already handles the Protected variant
+/// (it calls `Value::get()` which exposes the secret). We simply map to owned String
+/// so callers are not tied to `entry`'s borrow lifetime.
+fn entry_field_value(entry: &keepass::db::Entry, name: &str) -> Option<String> {
+    entry.get(name).map(|v| v.to_string())
+}
+
+/// Whether a given field is marked Protected in the source XML.
+///
+/// `entry.fields` is `pub HashMap<String, Value<String>>`. `Value::is_protected()` returns true
+/// for the `Protected(SecretBox<T>)` variant. Password is always treated protected regardless.
+fn entry_field_protected(entry: &keepass::db::Entry, name: &str) -> bool {
+    entry.fields.get(name).map(|v| v.is_protected()).unwrap_or(false)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
