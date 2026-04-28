@@ -13,8 +13,14 @@ impl HashPrefix {
     /// Compute hash prefix over the UTF-8 NFC-normalized plaintext.
     /// Plaintext is treated as already-NFC; callers normalize if they care.
     pub fn of(plaintext: &str) -> Self {
+        Self::of_bytes(plaintext.as_bytes())
+    }
+
+    /// Compute hash prefix over arbitrary binary content.
+    /// For ASCII/UTF-8 content, `of_bytes(s.as_bytes())` is identical to `of(s)`.
+    pub fn of_bytes(bytes: &[u8]) -> Self {
         let mut hasher = Sha256::new();
-        hasher.update(plaintext.as_bytes());
+        hasher.update(bytes);
         let digest = hasher.finalize();
         let hex = format!("{:x}", digest);
         Self(hex[..Self::LEN].to_string())
@@ -69,5 +75,12 @@ mod test {
     fn display_matches_inner() {
         let h = HashPrefix::of("hello");
         assert_eq!(format!("{}", h), "2cf24dba");
+    }
+
+    #[test]
+    fn hash_prefix_of_bytes_matches_text_for_ascii() {
+        let h_text = HashPrefix::of("hello");
+        let h_bytes = HashPrefix::of_bytes(b"hello");
+        assert_eq!(h_text, h_bytes);
     }
 }

@@ -185,15 +185,22 @@ use crate::options::DiffOptions;
 
 /// Compute field-level changes between two matched entries.
 /// Returns an empty Vec if there are no differences in user-visible fields.
+///
+/// `db_a` and `db_b` are the databases owning `a` and `b` respectively.
+/// They are required to resolve attachment content (keepass 0.12 stores attachment
+/// binary data centrally; names are only accessible via serialization).
 pub fn field_diff_entry(
     a: &keepass::db::Entry,
     b: &keepass::db::Entry,
+    db_a: &keepass::Database,
+    db_b: &keepass::Database,
     opts: &DiffOptions,
 ) -> Vec<FieldChange> {
     let mut out = Vec::new();
     diff_standard_fields(a, b, opts, &mut out);
     diff_custom_fields(a, b, opts, &mut out);
     diff_tags(a, b, &mut out);
+    diff_attachments(a, b, db_a, db_b, &mut out);
     out
 }
 
@@ -290,6 +297,109 @@ fn diff_tags(
     for tag in a_tags.difference(&b_tags) {
         out.push(FieldChange::TagRemoved { tag: (*tag).clone() });
     }
+}
+
+use crate::mask::HashPrefix;
+
+/// Diff the attachments of two entries, appending `AttachmentAdded`, `AttachmentRemoved`, and
+/// `AttachmentModified` changes to `out`.
+///
+/// keepass 0.12 stores attachment binary content in `Database::attachments` (a flat map keyed by
+/// `AttachmentId`). The name→id mapping lives in `Entry::attachments`, which is `pub(crate)` and
+/// therefore inaccessible from outside the keepass crate.  We recover the names by serializing
+/// the entry to JSON (enabled via the `serialization` keepass feature) and reading the
+/// `"attachments"` object's keys.  Content is then resolved by joining against
+/// `db.iter_all_attachments()` on the numeric id.
+fn diff_attachments(
+    a: &keepass::db::Entry,
+    b: &keepass::db::Entry,
+    db_a: &keepass::Database,
+    db_b: &keepass::Database,
+    out: &mut Vec<FieldChange>,
+) {
+    use std::collections::BTreeMap;
+
+    let a_atts: BTreeMap<String, HashPrefix> = collect_attachments(a, db_a);
+    let b_atts: BTreeMap<String, HashPrefix> = collect_attachments(b, db_b);
+
+    let all_keys: std::collections::BTreeSet<&String> =
+        a_atts.keys().chain(b_atts.keys()).collect();
+    for key in all_keys {
+        match (a_atts.get(key), b_atts.get(key)) {
+            (None, None) => {}
+            (None, Some(h)) => out.push(FieldChange::AttachmentAdded {
+                name: key.clone(),
+                hash: h.clone(),
+            }),
+            (Some(h), None) => out.push(FieldChange::AttachmentRemoved {
+                name: key.clone(),
+                hash: h.clone(),
+            }),
+            (Some(ha), Some(hb)) if ha == hb => {}
+            (Some(ha), Some(hb)) => out.push(FieldChange::AttachmentModified {
+                name: key.clone(),
+                from_hash: ha.clone(),
+                to_hash: hb.clone(),
+            }),
+        }
+    }
+}
+
+/// Build a sorted map from attachment name to `HashPrefix` (SHA-256 prefix of the binary content)
+/// for a single entry.
+///
+/// The keepass 0.12 API does not expose a public name-keyed iterator over an entry's attachments.
+/// We work around this by:
+/// 1. Serializing the entry to a JSON value (requires the `serialization` keepass feature).  The
+///    `attachments` field is serialized as `{"name": <AttachmentId as usize>, ...}`.
+/// 2. Building a `usize → &[u8]` content map from `db.iter_all_attachments()`, using
+///    `att_ref.id().id()` as the numeric key.
+/// 3. Joining the two maps to produce a `name → HashPrefix` map.
+fn collect_attachments(
+    entry: &keepass::db::Entry,
+    db: &keepass::Database,
+) -> std::collections::BTreeMap<String, HashPrefix> {
+    use std::collections::HashMap;
+
+    // Step 1 – extract name→numeric_id from the serialized entry.
+    // `serde_json::to_value` panics only on non-serializable types; Entry: Serialize.
+    let entry_json = serde_json::to_value(entry)
+        .expect("keepass Entry should always be serializable with the 'serialization' feature");
+    let name_to_id: HashMap<String, usize> = entry_json
+        .get("attachments")
+        .and_then(|v| v.as_object())
+        .map(|m| {
+            m.iter()
+                .filter_map(|(name, id)| id.as_u64().map(|n| (name.clone(), n as usize)))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if name_to_id.is_empty() {
+        return std::collections::BTreeMap::new();
+    }
+
+    // Step 2 – build numeric_id→content map from the database's attachment pool.
+    // Clone the content bytes so we don't hold a reference into db across the iterator.
+    let id_to_content: HashMap<usize, Vec<u8>> = db
+        .iter_all_attachments()
+        .map(|att_ref| {
+            // AttachmentRef derefs to Attachment; Attachment.data is Value<Vec<u8>>.
+            // Value::get() exposes the bytes regardless of protection.
+            let numeric_id = att_ref.id().id();
+            let content = att_ref.data.get().clone();
+            (numeric_id, content)
+        })
+        .collect();
+
+    // Step 3 – join and hash.
+    let mut out = std::collections::BTreeMap::new();
+    for (name, id) in name_to_id {
+        if let Some(content) = id_to_content.get(&id) {
+            out.insert(name, HashPrefix::of_bytes(content));
+        }
+    }
+    out
 }
 
 /// Get a standard field value as a String.
