@@ -420,6 +420,40 @@ fn diff_history(
     // concern. v0.1 reports same-length history as unchanged.
 }
 
+/// Field names suppressed by default (not in --strict).
+pub const NOISY_TIMESTAMP_FIELDS: &[&str] = &[
+    "LastAccessTime",
+    "UsageCount",
+    "LocationChanged",
+];
+
+fn suppress_field_changes(fields: Vec<FieldChange>, opts: &DiffOptions) -> (Vec<FieldChange>, usize) {
+    if opts.strict {
+        return (fields, 0);
+    }
+    let mut kept = Vec::with_capacity(fields.len());
+    let mut suppressed = 0usize;
+    for fc in fields {
+        if is_suppressible(&fc) {
+            suppressed += 1;
+        } else {
+            kept.push(fc);
+        }
+    }
+    (kept, suppressed)
+}
+
+fn is_suppressible(fc: &FieldChange) -> bool {
+    match fc {
+        FieldChange::Modified { name, .. } |
+        FieldChange::Added { name, .. } |
+        FieldChange::Removed { name, .. } => {
+            NOISY_TIMESTAMP_FIELDS.contains(&name.as_str())
+        }
+        _ => false,
+    }
+}
+
 /// Get a standard field value as a String.
 ///
 /// `Entry::get` returns `Option<&str>` and already handles the Protected variant
@@ -498,5 +532,47 @@ mod test {
         // Both have just root; root UUIDs differ between Database::new() invocations,
         // so we may see one added + one removed. The test just confirms the function runs.
         let _ = cs;
+    }
+
+    #[test]
+    fn suppression_drops_last_access_time() {
+        let opts = DiffOptions::default();
+        let input = vec![
+            FieldChange::Modified {
+                name: "LastAccessTime".into(),
+                change: ValueChange {
+                    from: ValueDisplay::Plain { value: "t1".into() },
+                    to: ValueDisplay::Plain { value: "t2".into() },
+                },
+            },
+            FieldChange::Modified {
+                name: "Title".into(),
+                change: ValueChange {
+                    from: ValueDisplay::Plain { value: "old".into() },
+                    to: ValueDisplay::Plain { value: "new".into() },
+                },
+            },
+        ];
+        let (kept, suppressed) = suppress_field_changes(input, &opts);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(suppressed, 1);
+        assert!(matches!(&kept[0], FieldChange::Modified { name, .. } if name == "Title"));
+    }
+
+    #[test]
+    fn strict_disables_suppression() {
+        let opts = DiffOptions { strict: true, show_secrets: false };
+        let input = vec![
+            FieldChange::Modified {
+                name: "LastAccessTime".into(),
+                change: ValueChange {
+                    from: ValueDisplay::Plain { value: "t1".into() },
+                    to: ValueDisplay::Plain { value: "t2".into() },
+                },
+            },
+        ];
+        let (kept, suppressed) = suppress_field_changes(input, &opts);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(suppressed, 0);
     }
 }
