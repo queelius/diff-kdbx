@@ -2,7 +2,7 @@
 name = "diff-kdbx"
 description = "Semantic diff for KeePass KDBX files"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.85"
 authors = ["Alexander Towell <lex@metafunctor.com>"]
 license = "MIT"
@@ -36,7 +36,6 @@ predicates = "3"
 
 [[bin]]
 name = "diff-kdbx"
-path = "src/bin/diff_kdbx.rs"
 required-features = ["cli"]
 
 [[bin]]
