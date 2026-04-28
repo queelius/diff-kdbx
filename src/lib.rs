@@ -4,3 +4,4 @@
 //! `docs/superpowers/specs/2026-04-27-diff-kdbx-design.md` for the full design.
 
 pub mod path;
+pub mod mask;
