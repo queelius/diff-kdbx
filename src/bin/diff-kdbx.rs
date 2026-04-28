@@ -152,7 +152,9 @@ fn run_textconv(cli: Cli) -> anyhow::Result<()> {
         show_secrets: cli.show_secrets,
     };
     let s = diff_kdbx::dump::dump(&db, &opts);
-    print!("{}", s);
+    // Buffer-then-write so stdout stays all-or-nothing.
+    use std::io::Write as _;
+    std::io::stdout().lock().write_all(s.as_bytes())?;
     Ok(())
 }
 
