@@ -5,3 +5,4 @@
 
 pub mod path;
 pub mod mask;
+pub mod options;
