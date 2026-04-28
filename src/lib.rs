@@ -5,6 +5,7 @@
 
 pub mod change_set;
 pub mod compute;
+pub mod dump;
 pub mod mask;
 pub mod options;
 pub mod path;
