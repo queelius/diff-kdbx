@@ -9,3 +9,4 @@ pub mod dump;
 pub mod mask;
 pub mod options;
 pub mod path;
+pub mod render;
