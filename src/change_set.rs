@@ -2,7 +2,9 @@
 //! KDBX databases.
 
 use crate::mask::HashPrefix;
+use crate::path::Path;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// Display form of a single field value, after masking policy is applied.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,6 +58,91 @@ pub enum FieldChange {
     HistoryGrew { added: usize },
     /// Per-entry history shrank or non-prefix-extended (suspicious).
     HistoryRewritten { from_len: usize, to_len: usize },
+}
+
+/// Database-level metadata change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DatabaseChange {
+    NameChanged { from: String, to: String },
+    ColorChanged { from: Option<String>, to: Option<String> },
+    RecycleBinChanged { from: Option<Uuid>, to: Option<Uuid> },
+    CustomDataModified { key: String, change: ValueChange },
+    CustomDataAdded { key: String, value: ValueDisplay },
+    CustomDataRemoved { key: String, value: ValueDisplay },
+}
+
+/// Group-level change kind.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum GroupChangeKind {
+    Added,
+    Removed,
+    Moved { to: Path },
+    Renamed { from: String, to: String },
+    PropertiesChanged { fields: Vec<FieldChange> },
+}
+
+/// Entry-level change kind.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum EntryChangeKind {
+    Added,
+    Removed,
+    Moved { to: Path },
+    Modified { fields: Vec<FieldChange> },
+}
+
+/// One change at any level of the KDBX hierarchy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "scope", rename_all = "snake_case")]
+pub enum Change {
+    Database(DatabaseChange),
+    Group { uuid: Uuid, path: Path, kind: GroupChangeKind },
+    Entry { uuid: Uuid, path: Path, kind: EntryChangeKind },
+}
+
+/// Counts of various change types. Rendered at the top of text output.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Summary {
+    pub groups_added: usize,
+    pub groups_removed: usize,
+    pub groups_modified: usize,
+    pub entries_added: usize,
+    pub entries_removed: usize,
+    pub entries_modified: usize,
+    pub fields_changed: usize,
+    pub attachments_changed: usize,
+    pub history_changes: usize,
+    pub metadata_changed: usize,
+    /// Count of changes hidden by suppression policy.
+    pub suppressed: usize,
+}
+
+/// Non-fatal observation surfaced from `compute`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DiffWarning {
+    /// The two databases use different KDBX versions.
+    VersionMismatch { a: String, b: String },
+    /// Hash collision in 8-char prefix detected (should be vanishingly rare).
+    HashCollision { plaintext_a_hash_full: String, plaintext_b_hash_full: String },
+}
+
+/// The top-level diff result.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChangeSet {
+    pub changes: Vec<Change>,
+    pub summary: Summary,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<DiffWarning>,
+}
+
+impl ChangeSet {
+    /// True iff there are no changes (warnings don't count).
+    pub fn is_empty(&self) -> bool {
+        self.changes.is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -114,5 +201,30 @@ mod test {
         let json = serde_json::to_string(&fc).unwrap();
         assert!(json.contains("\"kind\":\"modified\""));
         assert!(json.contains("\"masked\""));
+    }
+
+    #[test]
+    fn empty_change_set_is_empty() {
+        let cs = ChangeSet::default();
+        assert!(cs.is_empty());
+    }
+
+    #[test]
+    fn change_set_with_changes_is_not_empty() {
+        let cs = ChangeSet {
+            changes: vec![Change::Database(DatabaseChange::NameChanged {
+                from: "old".into(),
+                to: "new".into(),
+            })],
+            ..Default::default()
+        };
+        assert!(!cs.is_empty());
+    }
+
+    #[test]
+    fn change_set_serializes_with_warnings_omitted_when_empty() {
+        let cs = ChangeSet::default();
+        let json = serde_json::to_string(&cs).unwrap();
+        assert!(!json.contains("warnings"));
     }
 }
