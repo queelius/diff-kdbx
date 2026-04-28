@@ -201,6 +201,7 @@ pub fn field_diff_entry(
     diff_custom_fields(a, b, opts, &mut out);
     diff_tags(a, b, &mut out);
     diff_attachments(a, b, db_a, db_b, &mut out);
+    diff_history(a, b, &mut out);
     out
 }
 
@@ -400,6 +401,23 @@ fn collect_attachments(
         }
     }
     out
+}
+
+fn diff_history(
+    a: &keepass::db::Entry,
+    b: &keepass::db::Entry,
+    out: &mut Vec<FieldChange>,
+) {
+    let la = a.history.as_ref().map(|h| h.get_entries().len()).unwrap_or(0);
+    let lb = b.history.as_ref().map(|h| h.get_entries().len()).unwrap_or(0);
+    if lb > la {
+        out.push(FieldChange::HistoryGrew { added: lb - la });
+    } else if lb < la {
+        out.push(FieldChange::HistoryRewritten { from_len: la, to_len: lb });
+    }
+    // Same length but content might have been rewritten in place. Detecting
+    // that requires recursive diff into history entries; it's a --strict-only
+    // concern. v0.1 reports same-length history as unchanged.
 }
 
 /// Get a standard field value as a String.
