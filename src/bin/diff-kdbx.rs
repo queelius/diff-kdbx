@@ -1,6 +1,7 @@
 //! diff-kdbx: command-line interface.
 
 use clap::Parser;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
@@ -135,7 +136,99 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-// Stubs filled in by Tasks 21-22.
-fn run_textconv(_cli: Cli) -> anyhow::Result<()> { unimplemented!("Task 22") }
-fn run_dump(_cli: Cli) -> anyhow::Result<()> { unimplemented!("Task 22") }
-fn run_standalone(_cli: Cli) -> anyhow::Result<()> { unimplemented!("Task 22") }
+fn run_textconv(cli: Cli) -> anyhow::Result<()> {
+    let path = cli.textconv.as_ref().expect("textconv guard");
+    let rk = key::resolve(
+        cli.key_file.as_deref(),
+        "KDBX_DIFF_PASSWORD",
+        &format!("{}", path.display()),
+        false, // never interactive in textconv
+    )?;
+    let db_key = key::build_db_key(&rk)?;
+    let mut file = std::fs::File::open(path)?;
+    let db = keepass::Database::open(&mut file, db_key)?;
+    let opts = diff_kdbx::options::DumpOptions {
+        strict: cli.strict,
+        show_secrets: cli.show_secrets,
+    };
+    let s = diff_kdbx::dump::dump(&db, &opts);
+    print!("{}", s);
+    Ok(())
+}
+
+fn run_dump(cli: Cli) -> anyhow::Result<()> {
+    let path = cli.dump_path.as_ref().expect("dump guard");
+    let rk = key::resolve(
+        cli.key_file.as_deref(),
+        "KDBX_DIFF_PASSWORD",
+        &format!("{}", path.display()),
+        true,
+    )?;
+    let db_key = key::build_db_key(&rk)?;
+    let mut file = std::fs::File::open(path)?;
+    let db = keepass::Database::open(&mut file, db_key)?;
+    let opts = diff_kdbx::options::DumpOptions {
+        strict: cli.strict,
+        show_secrets: cli.show_secrets,
+    };
+    let s = diff_kdbx::dump::dump(&db, &opts);
+    print!("{}", s);
+    Ok(())
+}
+
+fn run_standalone(cli: Cli) -> anyhow::Result<()> {
+    let a_path = cli.a.as_ref().expect("standalone guard");
+    let b_path = cli.b.as_ref().expect("standalone guard");
+
+    let (rk_a, rk_b) = if cli.separate_keys {
+        let rk_a = key::resolve(
+            cli.key_file_a.as_deref(),
+            "KDBX_DIFF_PASSWORD_A",
+            &format!("{}", a_path.display()),
+            true,
+        )?;
+        let rk_b = key::resolve(
+            cli.key_file_b.as_deref(),
+            "KDBX_DIFF_PASSWORD_B",
+            &format!("{}", b_path.display()),
+            true,
+        )?;
+        (rk_a, rk_b)
+    } else {
+        let rk = key::resolve(
+            cli.key_file.as_deref(),
+            "KDBX_DIFF_PASSWORD",
+            "both files",
+            true,
+        )?;
+        (rk.clone(), rk)
+    };
+
+    let mut fa = std::fs::File::open(a_path)?;
+    let mut fb = std::fs::File::open(b_path)?;
+    let db_a = keepass::Database::open(&mut fa, key::build_db_key(&rk_a)?)?;
+    let db_b = keepass::Database::open(&mut fb, key::build_db_key(&rk_b)?)?;
+
+    if cli.show_secrets && !std::io::stdout().is_terminal() {
+        eprintln!("warning: --show-secrets with non-TTY stdout; secrets may be captured in logs/files");
+    }
+
+    let opts = diff_kdbx::options::DiffOptions {
+        strict: cli.strict,
+        show_secrets: cli.show_secrets,
+    };
+    let cs = diff_kdbx::compute::compute(&db_a, &db_b, &opts);
+
+    let render_opts = diff_kdbx::options::RenderOptions { color: cli.color };
+    let out = match cli.format {
+        Format::Text => diff_kdbx::render::text::render(&cs, &render_opts),
+        Format::Json => diff_kdbx::render::json::render(&cs),
+    };
+    print!("{}", out);
+
+    if cs.is_empty() {
+        std::process::exit(0);
+    } else {
+        std::process::exit(1);
+    }
+}
