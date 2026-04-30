@@ -7,6 +7,7 @@ use crate::change_set::ValueDisplay;
 use crate::compute::{NodeKind, tree_walk};
 use crate::options::{DiffOptions, DumpOptions};
 use crate::path::Path;
+use std::collections::HashMap;
 use std::fmt::Write as _;
 use uuid::Uuid;
 
@@ -53,6 +54,14 @@ fn dump_groups(db: &keepass::Database, opts: &DumpOptions, out: &mut String) {
         include_recycle_bin: opts.include_recycle_bin,
     };
     let map = tree_walk(db, &walk_opts);
+
+    // Build UUID -> EntryRef once. Otherwise dump_groups is O(N^2) in the
+    // entry count, which git invokes on every diff/log -p.
+    let entries: HashMap<Uuid, keepass::db::EntryRef<'_>> = db
+        .iter_all_entries()
+        .map(|er| (er.id().uuid(), er))
+        .collect();
+
     let mut keys: Vec<&Uuid> = map.keys().collect();
     // Sort by display path for a stable, human-readable ordering.
     keys.sort_by(|a, b| {
@@ -67,21 +76,12 @@ fn dump_groups(db: &keepass::Database, opts: &DumpOptions, out: &mut String) {
                 let _ = writeln!(out, "GROUP {}", node.path.display);
             }
             NodeKind::Entry => {
-                // Resolve the EntryRef so we can both read Entry fields (via Deref)
-                // and call EntryRef::attachments() for an accurate attachment count
-                // (entry.attachments is pub(crate) and not directly accessible here).
-                if let Some(er) = lookup_entry_ref(db, *uuid) {
-                    dump_entry(&er, *uuid, &node.path, opts, out);
+                if let Some(er) = entries.get(uuid) {
+                    dump_entry(er, *uuid, &node.path, opts, out);
                 }
             }
         }
     }
-}
-
-/// Find an `EntryRef` by UUID.  Returns `None` if the UUID is not present
-/// (should never happen in practice since the UUID came from `tree_walk`).
-fn lookup_entry_ref(db: &keepass::Database, uuid: Uuid) -> Option<keepass::db::EntryRef<'_>> {
-    db.iter_all_entries().find(|er| er.id().uuid() == uuid)
 }
 
 /// Emit one entry block.
