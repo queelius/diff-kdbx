@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use unicode_normalization::UnicodeNormalization;
 
 /// 8-character lowercase-hex prefix of SHA-256(plaintext).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -10,14 +11,20 @@ pub struct HashPrefix(pub String);
 impl HashPrefix {
     pub const LEN: usize = 8;
 
-    /// Compute hash prefix over the UTF-8 NFC-normalized plaintext.
-    /// Plaintext is treated as already-NFC; callers normalize if they care.
+    /// Compute hash prefix over UTF-8 NFC-normalized plaintext.
+    ///
+    /// Inputs in NFC and NFD that represent the same logical text hash
+    /// identically. Without this step, a vault round-tripped through
+    /// an editor that NFD-normalizes would produce false-positive
+    /// Modified events on otherwise-unchanged Unicode strings.
     pub fn of(plaintext: &str) -> Self {
-        Self::of_bytes(plaintext.as_bytes())
+        let normalized: String = plaintext.nfc().collect();
+        Self::of_bytes(normalized.as_bytes())
     }
 
     /// Compute hash prefix over arbitrary binary content.
-    /// For ASCII/UTF-8 content, `of_bytes(s.as_bytes())` is identical to `of(s)`.
+    /// For pure-ASCII strings, `of_bytes(s.as_bytes())` equals `of(s)`.
+    /// For non-ASCII text, prefer `of()` to get NFC normalization.
     pub fn of_bytes(bytes: &[u8]) -> Self {
         let mut hasher = Sha256::new();
         hasher.update(bytes);
@@ -82,5 +89,15 @@ mod test {
         let h_text = HashPrefix::of("hello");
         let h_bytes = HashPrefix::of_bytes(b"hello");
         assert_eq!(h_text, h_bytes);
+    }
+
+    #[test]
+    fn nfc_and_nfd_hash_identically() {
+        // U+00E9 (precomposed e-acute) vs U+0065 U+0301 (e + combining acute).
+        // Same logical character, different byte sequences. NFC normalization
+        // collapses them to the same hash.
+        let nfc = HashPrefix::of("\u{00E9}");
+        let nfd = HashPrefix::of("\u{0065}\u{0301}");
+        assert_eq!(nfc, nfd);
     }
 }
