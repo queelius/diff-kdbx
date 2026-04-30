@@ -139,15 +139,21 @@ mod key {
     }
 }
 
-fn main() {
+fn main() -> std::process::ExitCode {
     // Exit codes: 0 = no changes, 1 = changes found, 2 = error.
-    if let Err(e) = run() {
-        eprintln!("Error: {e:#}");
-        std::process::exit(2);
+    // Returning ExitCode (rather than calling std::process::exit) lets the
+    // runtime flush stdout before termination; otherwise piped output can
+    // be silently truncated.
+    match run() {
+        Ok(code) => std::process::ExitCode::from(code),
+        Err(e) => {
+            eprintln!("Error: {e:#}");
+            std::process::ExitCode::from(2)
+        }
     }
 }
 
-fn run() -> anyhow::Result<()> {
+fn run() -> anyhow::Result<u8> {
     let cli = Cli::parse();
     if cli.textconv.is_some() {
         run_textconv(cli)
@@ -160,7 +166,20 @@ fn run() -> anyhow::Result<()> {
     }
 }
 
-fn run_textconv(cli: Cli) -> anyhow::Result<()> {
+/// Write all bytes to stdout and flush. Treats a broken pipe as a
+/// benign signal that the consumer is done reading (mirrors `grep`,
+/// `sort`, and similar unix tools under SIGPIPE).
+fn write_stdout(bytes: &[u8]) -> anyhow::Result<()> {
+    use std::io::Write as _;
+    let mut stdout = std::io::stdout().lock();
+    match stdout.write_all(bytes).and_then(|()| stdout.flush()) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+fn run_textconv(cli: Cli) -> anyhow::Result<u8> {
     let path = cli.textconv.as_ref().expect("textconv guard");
     let rk = key::resolve(
         cli.key_file.as_deref(),
@@ -178,12 +197,11 @@ fn run_textconv(cli: Cli) -> anyhow::Result<()> {
     };
     let s = diff_kdbx::dump::dump(&db, &opts);
     // Buffer-then-write so stdout stays all-or-nothing.
-    use std::io::Write as _;
-    std::io::stdout().lock().write_all(s.as_bytes())?;
-    Ok(())
+    write_stdout(s.as_bytes())?;
+    Ok(0)
 }
 
-fn run_dump(cli: Cli) -> anyhow::Result<()> {
+fn run_dump(cli: Cli) -> anyhow::Result<u8> {
     let path = cli.dump_path.as_ref().expect("dump guard");
     let rk = key::resolve(
         cli.key_file.as_deref(),
@@ -200,11 +218,11 @@ fn run_dump(cli: Cli) -> anyhow::Result<()> {
         include_recycle_bin: cli.include_recycle_bin,
     };
     let s = diff_kdbx::dump::dump(&db, &opts);
-    print!("{}", s);
-    Ok(())
+    write_stdout(s.as_bytes())?;
+    Ok(0)
 }
 
-fn run_standalone(cli: Cli) -> anyhow::Result<()> {
+fn run_standalone(cli: Cli) -> anyhow::Result<u8> {
     let a_path = cli.a.as_ref().expect("standalone guard");
     let b_path = cli.b.as_ref().expect("standalone guard");
 
@@ -255,11 +273,7 @@ fn run_standalone(cli: Cli) -> anyhow::Result<()> {
         Format::Text => diff_kdbx::render::text::render(&cs, &render_opts),
         Format::Json => diff_kdbx::render::json::render(&cs),
     };
-    print!("{}", out);
+    write_stdout(out.as_bytes())?;
 
-    if cs.is_empty() {
-        std::process::exit(0);
-    } else {
-        std::process::exit(1);
-    }
+    Ok(if cs.is_empty() { 0 } else { 1 })
 }
