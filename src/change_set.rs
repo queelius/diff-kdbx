@@ -20,9 +20,13 @@ impl ValueDisplay {
     /// Construct a ValueDisplay according to the protected-flag and show-secrets policy.
     pub fn from_value(value: &str, protected: bool, show_secrets: bool) -> Self {
         if protected && !show_secrets {
-            Self::Masked { hash: HashPrefix::of(value) }
+            Self::Masked {
+                hash: HashPrefix::of(value),
+            }
         } else {
-            Self::Plain { value: value.to_string() }
+            Self::Plain {
+                value: value.to_string(),
+            }
         }
     }
 }
@@ -53,7 +57,11 @@ pub enum FieldChange {
     /// Attachment was removed.
     AttachmentRemoved { name: String, hash: HashPrefix },
     /// Attachment with the same name has different content.
-    AttachmentModified { name: String, from_hash: HashPrefix, to_hash: HashPrefix },
+    AttachmentModified {
+        name: String,
+        from_hash: HashPrefix,
+        to_hash: HashPrefix,
+    },
     /// Per-entry history grew (entry was modified, previous state pushed).
     HistoryGrew { added: usize },
     /// Per-entry history shrank or non-prefix-extended (suspicious).
@@ -64,12 +72,30 @@ pub enum FieldChange {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DatabaseChange {
-    NameChanged { from: String, to: String },
-    ColorChanged { from: Option<String>, to: Option<String> },
-    RecycleBinChanged { from: Option<Uuid>, to: Option<Uuid> },
-    CustomDataModified { key: String, change: ValueChange },
-    CustomDataAdded { key: String, value: ValueDisplay },
-    CustomDataRemoved { key: String, value: ValueDisplay },
+    NameChanged {
+        from: String,
+        to: String,
+    },
+    ColorChanged {
+        from: Option<String>,
+        to: Option<String>,
+    },
+    RecycleBinChanged {
+        from: Option<Uuid>,
+        to: Option<Uuid>,
+    },
+    CustomDataModified {
+        key: String,
+        change: ValueChange,
+    },
+    CustomDataAdded {
+        key: String,
+        value: ValueDisplay,
+    },
+    CustomDataRemoved {
+        key: String,
+        value: ValueDisplay,
+    },
 }
 
 /// Group-level change kind.
@@ -98,8 +124,16 @@ pub enum EntryChangeKind {
 #[serde(tag = "scope", rename_all = "snake_case")]
 pub enum Change {
     Database(DatabaseChange),
-    Group { uuid: Uuid, path: Path, kind: GroupChangeKind },
-    Entry { uuid: Uuid, path: Path, kind: EntryChangeKind },
+    Group {
+        uuid: Uuid,
+        path: Path,
+        kind: GroupChangeKind,
+    },
+    Entry {
+        uuid: Uuid,
+        path: Path,
+        kind: EntryChangeKind,
+    },
 }
 
 /// Counts of various change types. Rendered at the top of text output.
@@ -126,7 +160,10 @@ pub enum DiffWarning {
     /// The two databases use different KDBX versions.
     VersionMismatch { a: String, b: String },
     /// Hash collision in 8-char prefix detected (should be vanishingly rare).
-    HashCollision { plaintext_a_hash_full: String, plaintext_b_hash_full: String },
+    HashCollision {
+        plaintext_a_hash_full: String,
+        plaintext_b_hash_full: String,
+    },
 }
 
 /// The top-level diff result.
@@ -182,7 +219,9 @@ mod test {
     fn field_change_added_serializes() {
         let fc = FieldChange::Added {
             name: "Title".into(),
-            value: ValueDisplay::Plain { value: "Chase".into() },
+            value: ValueDisplay::Plain {
+                value: "Chase".into(),
+            },
         };
         let json = serde_json::to_string(&fc).unwrap();
         assert!(json.contains("\"kind\":\"added\""));
@@ -194,8 +233,12 @@ mod test {
         let fc = FieldChange::Modified {
             name: "Password".into(),
             change: ValueChange {
-                from: ValueDisplay::Masked { hash: HashPrefix::of("a") },
-                to: ValueDisplay::Masked { hash: HashPrefix::of("b") },
+                from: ValueDisplay::Masked {
+                    hash: HashPrefix::of("a"),
+                },
+                to: ValueDisplay::Masked {
+                    hash: HashPrefix::of("b"),
+                },
             },
         };
         let json = serde_json::to_string(&fc).unwrap();

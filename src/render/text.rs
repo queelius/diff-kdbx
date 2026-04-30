@@ -1,8 +1,8 @@
 //! Tree-shaped text rendering of a ChangeSet.
 
 use crate::change_set::{
-    Change, ChangeSet, DatabaseChange, EntryChangeKind, FieldChange, GroupChangeKind,
-    Summary, ValueChange, ValueDisplay,
+    Change, ChangeSet, DatabaseChange, EntryChangeKind, FieldChange, GroupChangeKind, Summary,
+    ValueChange, ValueDisplay,
 };
 use crate::options::RenderOptions;
 use std::fmt::Write as _;
@@ -25,9 +25,14 @@ fn render_summary(s: &Summary, out: &mut String) {
     let _ = writeln!(
         out,
         "summary: +{}/-{}/~{} entries, +{}/-{}/~{} groups, {} fields, {} suppressed",
-        s.entries_added, s.entries_removed, s.entries_modified,
-        s.groups_added, s.groups_removed, s.groups_modified,
-        s.fields_changed, s.suppressed,
+        s.entries_added,
+        s.entries_removed,
+        s.entries_modified,
+        s.groups_added,
+        s.groups_removed,
+        s.groups_modified,
+        s.fields_changed,
+        s.suppressed,
     );
 }
 
@@ -57,10 +62,20 @@ fn render_database(d: &DatabaseChange, out: &mut String) {
             let _ = writeln!(out, "DATABASE recycle_bin: {:?} -> {:?}", from, to);
         }
         DatabaseChange::CustomDataModified { key, change } => {
-            let _ = writeln!(out, "DATABASE custom_data[{}]: {}", key, fmt_value_change(change));
+            let _ = writeln!(
+                out,
+                "DATABASE custom_data[{}]: {}",
+                key,
+                fmt_value_change(change)
+            );
         }
         DatabaseChange::CustomDataAdded { key, value } => {
-            let _ = writeln!(out, "DATABASE custom_data[{}] = {}", key, fmt_value_display(value));
+            let _ = writeln!(
+                out,
+                "DATABASE custom_data[{}] = {}",
+                key,
+                fmt_value_display(value)
+            );
         }
         DatabaseChange::CustomDataRemoved { key, value } => {
             let _ = writeln!(
@@ -85,7 +100,11 @@ fn render_group(path: &crate::path::Path, kind: &GroupChangeKind, out: &mut Stri
             let _ = writeln!(out, "~ GROUP {} -> {}", path.display, to.display);
         }
         GroupChangeKind::Renamed { from, to } => {
-            let _ = writeln!(out, "~ GROUP {} (renamed: {} -> {})", path.display, from, to);
+            let _ = writeln!(
+                out,
+                "~ GROUP {} (renamed: {} -> {})",
+                path.display, from, to
+            );
         }
         GroupChangeKind::PropertiesChanged { fields } => {
             let _ = writeln!(out, "~ GROUP {}", path.display);
@@ -139,7 +158,11 @@ fn render_field(f: &FieldChange, out: &mut String) {
         FieldChange::AttachmentRemoved { name, hash } => {
             let _ = writeln!(out, "  - attachment {} <hash:{}>", name, hash);
         }
-        FieldChange::AttachmentModified { name, from_hash, to_hash } => {
+        FieldChange::AttachmentModified {
+            name,
+            from_hash,
+            to_hash,
+        } => {
             let _ = writeln!(
                 out,
                 "  ~ attachment {} [<hash:{}> -> <hash:{}>]",
@@ -163,7 +186,11 @@ fn fmt_value_display(v: &ValueDisplay) -> String {
 }
 
 fn fmt_value_change(c: &ValueChange) -> String {
-    format!("{} -> {}", fmt_value_display(&c.from), fmt_value_display(&c.to))
+    format!(
+        "{} -> {}",
+        fmt_value_display(&c.from),
+        fmt_value_display(&c.to)
+    )
 }
 
 #[cfg(test)]
