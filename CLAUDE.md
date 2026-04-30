@@ -44,21 +44,32 @@ Read the spec before making design-level changes. Read the plan before adding ne
 ## Build and test
 
 ```bash
-cargo test --lib                    # Layer 1: 47 unit tests (no I/O)
-cargo test --features cli           # Layers 1-5: 66 active tests, 2 ignored
+cargo test --lib                    # Layer 1: 52 unit tests (no I/O)
+cargo test --features cli           # Layers 1-5: 71 active tests, 2 ignored
 cargo build --features cli          # CLI binary
 cargo run --features cli --bin gen-fixtures   # regenerate synthetic fixtures (master pw "test-password-do-not-use")
+cargo fmt --check                                          # CI gate
+cargo clippy --all-targets -- -D warnings                  # CI gate (default features)
+cargo clippy --features cli --all-targets -- -D warnings   # CI gate (cli feature)
 ```
 
 The five test layers (see `docs/testing.md` for the full pyramid):
 
 | Layer | Suite | Count |
 |---|---|---|
-| 1 | `cargo test --lib` (in-tree unit tests) | 47 |
+| 1 | `cargo test --lib` (in-tree unit tests) | 52 |
 | 2 | `tests/integration.rs` (CLI end-to-end) | 8 + 2 ignored |
 | 3 | `tests/determinism.rs` (cross-process byte-stability) | 3 |
 | 4 | `tests/git_driver.rs` (real git in tempdirs) | 5 |
 | 5 | `tests/remote_roundtrip.rs` (bare-repo-as-remote) | 3 |
+
+Iterate on a single layer or test:
+
+```bash
+cargo test --features cli --test git_driver   # one layer (file): tests/git_driver.rs only
+cargo test --features cli <pattern>           # tests whose name matches <pattern>, any layer
+cargo test --features cli -- --nocapture      # see git stderr/stdout when debugging Layer 4/5
+```
 
 External dependencies for the full suite: `cargo` and `git`. No `gh`, no network, no test repos to provision.
 
@@ -86,6 +97,7 @@ This crate depends on `keepass = "0.12"` with features `["serialization", "save_
 - Suppression and masking are applied at compute time, not at render time. The change-set value is canonical for a given options bundle; renderers can't drift.
 - Exit codes mirror `/usr/bin/diff`: `0` no changes, `1` changes detected, `2` error.
 - Textconv mode buffers stdout (all-or-nothing) so git never sees partial dumps on error.
+- Synthetic fixtures are encrypted with `test-password-do-not-use`. Export `KDBX_DIFF_PASSWORD=test-password-do-not-use` before invoking the CLI against `tests/fixtures/**/*.kdbx` outside the test harness; the textconv path fails closed without it.
 
 ## Out of scope (deferred)
 

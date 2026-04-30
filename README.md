@@ -19,7 +19,7 @@ output (textconv contract). Exit codes mirror `/usr/bin/diff` (0 no changes,
 
 ## Status
 
-v0.1. Library and CLI working. 66 active tests across five layers (unit,
+v0.1. Library and CLI working. 71 active tests across five layers (unit,
 integration, determinism, real-git driver, push/clone roundtrip). WASM build
 verified. Not yet on crates.io. The `keepass = "0.12"` API has known gaps
 that diff-kdbx works around; see [keepass-rs#314](https://github.com/sseemayer/keepass-rs/issues/314)
