@@ -10,7 +10,7 @@ use std::path::PathBuf;
     version,
     about = "Semantic diff for KeePass KDBX files",
     long_about = "Semantic diff for KeePass KDBX files. Primarily a git textconv driver; \
-                  also a standalone CLI. See README for git integration setup.",
+                  also a standalone CLI. See README for git integration setup."
 )]
 struct Cli {
     /// First KDBX file (older snapshot).
@@ -76,7 +76,7 @@ enum Format {
 }
 
 mod key {
-    use anyhow::{anyhow, Context, Result};
+    use anyhow::{Context, Result, anyhow};
     use std::io::IsTerminal;
     use std::path::{Path, PathBuf};
 
@@ -97,20 +97,30 @@ mod key {
     ) -> Result<ResolvedKey> {
         let key_file = key_file_explicit.map(|p| p.to_path_buf());
         if let Ok(p) = std::env::var(env_var) {
-            return Ok(ResolvedKey { password: Some(p), key_file });
+            return Ok(ResolvedKey {
+                password: Some(p),
+                key_file,
+            });
         }
         if interactive_allowed && std::io::stdin().is_terminal() {
             let p = rpassword::prompt_password(format!("Password for {}: ", prompt_label))
                 .context("reading password from TTY")?;
-            return Ok(ResolvedKey { password: Some(p), key_file });
+            return Ok(ResolvedKey {
+                password: Some(p),
+                key_file,
+            });
         }
         // No password source. If a key file alone suffices, return that.
         if key_file.is_some() {
-            return Ok(ResolvedKey { password: None, key_file });
+            return Ok(ResolvedKey {
+                password: None,
+                key_file,
+            });
         }
         Err(anyhow!(
             "no key source for {}: set {}, pass --key-file, or run interactively",
-            prompt_label, env_var
+            prompt_label,
+            env_var
         ))
     }
 
@@ -121,7 +131,8 @@ mod key {
             k = k.with_password(p);
         }
         if let Some(path) = &rk.key_file {
-            let data = std::fs::read(path).with_context(|| format!("reading key file {}", path.display()))?;
+            let data = std::fs::read(path)
+                .with_context(|| format!("reading key file {}", path.display()))?;
             k = k.with_keyfile(&mut std::io::Cursor::new(data))?;
         }
         Ok(k)
@@ -154,7 +165,7 @@ fn run_textconv(cli: Cli) -> anyhow::Result<()> {
     let rk = key::resolve(
         cli.key_file.as_deref(),
         "KDBX_DIFF_PASSWORD",
-        &format!("{}", path.display()),
+        &path.display().to_string(),
         false, // never interactive in textconv
     )?;
     let db_key = key::build_db_key(&rk)?;
@@ -177,7 +188,7 @@ fn run_dump(cli: Cli) -> anyhow::Result<()> {
     let rk = key::resolve(
         cli.key_file.as_deref(),
         "KDBX_DIFF_PASSWORD",
-        &format!("{}", path.display()),
+        &path.display().to_string(),
         true,
     )?;
     let db_key = key::build_db_key(&rk)?;
@@ -201,13 +212,13 @@ fn run_standalone(cli: Cli) -> anyhow::Result<()> {
         let rk_a = key::resolve(
             cli.key_file_a.as_deref(),
             "KDBX_DIFF_PASSWORD_A",
-            &format!("{}", a_path.display()),
+            &a_path.display().to_string(),
             true,
         )?;
         let rk_b = key::resolve(
             cli.key_file_b.as_deref(),
             "KDBX_DIFF_PASSWORD_B",
-            &format!("{}", b_path.display()),
+            &b_path.display().to_string(),
             true,
         )?;
         (rk_a, rk_b)
@@ -227,7 +238,9 @@ fn run_standalone(cli: Cli) -> anyhow::Result<()> {
     let db_b = keepass::Database::open(&mut fb, key::build_db_key(&rk_b)?)?;
 
     if cli.show_secrets && !std::io::stdout().is_terminal() {
-        eprintln!("warning: --show-secrets with non-TTY stdout; secrets may be captured in logs/files");
+        eprintln!(
+            "warning: --show-secrets with non-TTY stdout; secrets may be captured in logs/files"
+        );
     }
 
     let opts = diff_kdbx::options::DiffOptions {

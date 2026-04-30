@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Options for `compute`. Default suppresses noisy timestamps and masks secrets.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiffOptions {
     /// If true, do not suppress noisy fields (LastAccessTime, UsageCount, etc.).
     pub strict: bool,
@@ -14,14 +14,8 @@ pub struct DiffOptions {
     pub include_recycle_bin: bool,
 }
 
-impl Default for DiffOptions {
-    fn default() -> Self {
-        Self { strict: false, show_secrets: false, include_recycle_bin: false }
-    }
-}
-
 /// Options for `dump`. Default suppresses noisy timestamps and masks secrets.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DumpOptions {
     pub strict: bool,
     pub show_secrets: bool,
@@ -30,23 +24,11 @@ pub struct DumpOptions {
     pub include_recycle_bin: bool,
 }
 
-impl Default for DumpOptions {
-    fn default() -> Self {
-        Self { strict: false, show_secrets: false, include_recycle_bin: false }
-    }
-}
-
 /// Options for renderers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RenderOptions {
     /// Use ANSI color when rendering text. Default false.
     pub color: bool,
-}
-
-impl Default for RenderOptions {
-    fn default() -> Self {
-        Self { color: false }
-    }
 }
 
 #[cfg(test)]

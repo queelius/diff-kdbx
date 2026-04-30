@@ -4,7 +4,7 @@
 //! Each line is independently diffable. Indentation is 2 spaces.
 
 use crate::change_set::ValueDisplay;
-use crate::compute::{tree_walk, NodeKind};
+use crate::compute::{NodeKind, tree_walk};
 use crate::options::{DiffOptions, DumpOptions};
 use crate::path::Path;
 use std::fmt::Write as _;
@@ -24,7 +24,11 @@ pub fn dump(db: &keepass::Database, opts: &DumpOptions) -> String {
 /// Emit database header: metadata and version.
 fn dump_header(db: &keepass::Database, out: &mut String) {
     let _ = writeln!(out, "DATABASE");
-    let _ = writeln!(out, "  name: {}", db.meta.database_name.as_deref().unwrap_or(""));
+    let _ = writeln!(
+        out,
+        "  name: {}",
+        db.meta.database_name.as_deref().unwrap_or("")
+    );
     let _ = writeln!(out, "  version: {}", db.config.version);
     let bin = db
         .meta
@@ -100,8 +104,7 @@ fn dump_entry(
         let raw = er.get(name).unwrap_or("").to_string();
         // Password is always treated as protected; other fields defer to the
         // Value::is_protected() flag stored in entry.fields.
-        let protected = name == "Password"
-            || er.fields.get(name).map(|v| v.is_protected()).unwrap_or(false);
+        let protected = name == "Password" || er.fields.get(name).is_some_and(|v| v.is_protected());
         let display = ValueDisplay::from_value(&raw, protected, opts.show_secrets);
         match display {
             ValueDisplay::Plain { value } => {
@@ -126,7 +129,7 @@ fn dump_entry(
     let _ = writeln!(out, "  attachments: {}", att_count);
 
     // History length.
-    let hist_len = er.history.as_ref().map(|h| h.get_entries().len()).unwrap_or(0);
+    let hist_len = er.history.as_ref().map_or(0, |h| h.get_entries().len());
     let _ = writeln!(out, "  history: {} entries", hist_len);
 
     // Modification timestamp (omitted in --strict mode to reduce noise).
@@ -158,9 +161,18 @@ mod test {
     fn header_contains_required_lines() {
         let db = keepass::Database::new();
         let s = dump(&db, &DumpOptions::default());
-        assert!(s.contains("DATABASE\n"), "dump should contain DATABASE header");
-        assert!(s.contains("  version:"), "dump should contain version field");
-        assert!(s.contains("  recycle_bin:"), "dump should contain recycle_bin field");
+        assert!(
+            s.contains("DATABASE\n"),
+            "dump should contain DATABASE header"
+        );
+        assert!(
+            s.contains("  version:"),
+            "dump should contain version field"
+        );
+        assert!(
+            s.contains("  recycle_bin:"),
+            "dump should contain recycle_bin field"
+        );
     }
 
     #[test]
@@ -203,10 +215,14 @@ mod test {
         let db = db_with_recycle_bin();
         let s = dump(&db, &DumpOptions::default());
         assert!(s.contains("Live"), "Live entry should appear in dump");
-        assert!(!s.contains("Trashed"), "Trashed entry should be suppressed by default");
+        assert!(
+            !s.contains("Trashed"),
+            "Trashed entry should be suppressed by default"
+        );
         // The recycle bin group line looks like "GROUP .../Recycle Bin".
         assert!(
-            !s.lines().any(|l| l.starts_with("GROUP") && l.ends_with("Recycle Bin")),
+            !s.lines()
+                .any(|l| l.starts_with("GROUP") && l.ends_with("Recycle Bin")),
             "Recycle Bin group should be suppressed"
         );
     }
@@ -214,9 +230,18 @@ mod test {
     #[test]
     fn dump_shows_recycle_bin_when_opted_in() {
         let db = db_with_recycle_bin();
-        let opts = DumpOptions { include_recycle_bin: true, ..DumpOptions::default() };
+        let opts = DumpOptions {
+            include_recycle_bin: true,
+            ..DumpOptions::default()
+        };
         let s = dump(&db, &opts);
-        assert!(s.contains("Trashed"), "Trashed entry should appear with include_recycle_bin = true");
-        assert!(s.contains("Recycle Bin"), "Recycle Bin group should appear with include_recycle_bin = true");
+        assert!(
+            s.contains("Trashed"),
+            "Trashed entry should appear with include_recycle_bin = true"
+        );
+        assert!(
+            s.contains("Recycle Bin"),
+            "Recycle Bin group should appear with include_recycle_bin = true"
+        );
     }
 }

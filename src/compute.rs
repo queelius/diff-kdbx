@@ -37,7 +37,13 @@ pub fn tree_walk(db: &keepass::Database, opts: &DiffOptions) -> HashMap<Uuid, Lo
     } else {
         db.meta.recyclebin_uuid
     };
-    walk_group_ref(&root, &mut Vec::new(), &mut Vec::new(), db, recycle_bin_uuid, &mut out);
+    walk_group_ref(
+        &root,
+        &mut Vec::new(),
+        &mut Vec::new(),
+        recycle_bin_uuid,
+        &mut out,
+    );
     out
 }
 
@@ -45,7 +51,6 @@ fn walk_group_ref(
     group: &GroupRef<'_>,
     name_stack: &mut Vec<String>,
     uuid_stack: &mut Vec<Uuid>,
-    db: &keepass::Database,
     recycle_bin_uuid: Option<Uuid>,
     out: &mut HashMap<Uuid, LocatedNode>,
 ) {
@@ -59,23 +64,18 @@ fn walk_group_ref(
     name_stack.push(group.name.clone());
     uuid_stack.push(group_uuid);
 
-    let path = {
-        let segments: Vec<&str> = name_stack.iter().map(|s| s.as_str()).collect();
-        Path::from_segments(&segments, uuid_stack.clone())
-    };
-
     out.insert(
         group_uuid,
         LocatedNode {
             uuid: group_uuid,
-            path,
+            path: build_path(name_stack, uuid_stack),
             kind: NodeKind::Group,
         },
     );
 
     // Walk child groups recursively.
     for child_group in group.groups() {
-        walk_group_ref(&child_group, name_stack, uuid_stack, db, recycle_bin_uuid, out);
+        walk_group_ref(&child_group, name_stack, uuid_stack, recycle_bin_uuid, out);
     }
 
     // Walk entries directly in this group.
@@ -86,16 +86,11 @@ fn walk_group_ref(
         name_stack.push(title.to_owned());
         uuid_stack.push(entry_uuid);
 
-        let path = {
-            let segments: Vec<&str> = name_stack.iter().map(|s| s.as_str()).collect();
-            Path::from_segments(&segments, uuid_stack.clone())
-        };
-
         out.insert(
             entry_uuid,
             LocatedNode {
                 uuid: entry_uuid,
-                path,
+                path: build_path(name_stack, uuid_stack),
                 kind: NodeKind::Entry,
             },
         );
@@ -106,6 +101,11 @@ fn walk_group_ref(
 
     name_stack.pop();
     uuid_stack.pop();
+}
+
+fn build_path(name_stack: &[String], uuid_stack: &[Uuid]) -> Path {
+    let segments: Vec<&str> = name_stack.iter().map(String::as_str).collect();
+    Path::from_segments(&segments, uuid_stack.to_vec())
 }
 
 use crate::change_set::{Change, ChangeSet, EntryChangeKind, GroupChangeKind};
@@ -130,14 +130,16 @@ pub fn symmetric_diff(
     // Added: in b only.
     for (uuid, node) in b {
         if !a.contains_key(uuid) {
-            out.changes.push(structure_change(*uuid, node, StructEvent::Added));
+            out.changes
+                .push(structure_change(*uuid, node, StructEvent::Added));
             count_structural(&mut out.summary, node, StructEvent::Added);
         }
     }
     // Removed: in a only.
     for (uuid, node) in a {
         if !b.contains_key(uuid) {
-            out.changes.push(structure_change(*uuid, node, StructEvent::Removed));
+            out.changes
+                .push(structure_change(*uuid, node, StructEvent::Removed));
             count_structural(&mut out.summary, node, StructEvent::Removed);
         }
     }
@@ -145,12 +147,20 @@ pub fn symmetric_diff(
     for (uuid, na) in a {
         if let Some(nb) = b.get(uuid) {
             if na.path != nb.path {
-                out.changes.push(structure_change(*uuid, nb, StructEvent::Moved {
-                    to_path: nb.path.clone(),
-                }));
-                count_structural(&mut out.summary, na, StructEvent::Moved {
-                    to_path: nb.path.clone(),
-                });
+                out.changes.push(structure_change(
+                    *uuid,
+                    nb,
+                    StructEvent::Moved {
+                        to_path: nb.path.clone(),
+                    },
+                ));
+                count_structural(
+                    &mut out.summary,
+                    na,
+                    StructEvent::Moved {
+                        to_path: nb.path.clone(),
+                    },
+                );
             }
         }
     }
@@ -166,22 +176,34 @@ enum StructEvent {
 fn structure_change(uuid: Uuid, node: &LocatedNode, ev: StructEvent) -> Change {
     match (&node.kind, ev) {
         (NodeKind::Group, StructEvent::Added) => Change::Group {
-            uuid, path: node.path.clone(), kind: GroupChangeKind::Added,
+            uuid,
+            path: node.path.clone(),
+            kind: GroupChangeKind::Added,
         },
         (NodeKind::Group, StructEvent::Removed) => Change::Group {
-            uuid, path: node.path.clone(), kind: GroupChangeKind::Removed,
+            uuid,
+            path: node.path.clone(),
+            kind: GroupChangeKind::Removed,
         },
         (NodeKind::Group, StructEvent::Moved { to_path }) => Change::Group {
-            uuid, path: node.path.clone(), kind: GroupChangeKind::Moved { to: to_path },
+            uuid,
+            path: node.path.clone(),
+            kind: GroupChangeKind::Moved { to: to_path },
         },
         (NodeKind::Entry, StructEvent::Added) => Change::Entry {
-            uuid, path: node.path.clone(), kind: EntryChangeKind::Added,
+            uuid,
+            path: node.path.clone(),
+            kind: EntryChangeKind::Added,
         },
         (NodeKind::Entry, StructEvent::Removed) => Change::Entry {
-            uuid, path: node.path.clone(), kind: EntryChangeKind::Removed,
+            uuid,
+            path: node.path.clone(),
+            kind: EntryChangeKind::Removed,
         },
         (NodeKind::Entry, StructEvent::Moved { to_path }) => Change::Entry {
-            uuid, path: node.path.clone(), kind: EntryChangeKind::Moved { to: to_path },
+            uuid,
+            path: node.path.clone(),
+            kind: EntryChangeKind::Moved { to: to_path },
         },
     }
 }
@@ -266,12 +288,12 @@ fn diff_custom_fields(
     let a_keys: BTreeSet<&String> = a
         .fields
         .keys()
-        .filter(|k| !STANDARD_FIELDS.iter().any(|s| *s == k.as_str()))
+        .filter(|k| !STANDARD_FIELDS.contains(&k.as_str()))
         .collect();
     let b_keys: BTreeSet<&String> = b
         .fields
         .keys()
-        .filter(|k| !STANDARD_FIELDS.iter().any(|s| *s == k.as_str()))
+        .filter(|k| !STANDARD_FIELDS.contains(&k.as_str()))
         .collect();
 
     for key in a_keys.union(&b_keys) {
@@ -300,19 +322,19 @@ fn diff_custom_fields(
     }
 }
 
-fn diff_tags(
-    a: &keepass::db::Entry,
-    b: &keepass::db::Entry,
-    out: &mut Vec<FieldChange>,
-) {
+fn diff_tags(a: &keepass::db::Entry, b: &keepass::db::Entry, out: &mut Vec<FieldChange>) {
     use std::collections::BTreeSet;
     let a_tags: BTreeSet<&String> = a.tags.iter().collect();
     let b_tags: BTreeSet<&String> = b.tags.iter().collect();
     for tag in b_tags.difference(&a_tags) {
-        out.push(FieldChange::TagAdded { tag: (*tag).clone() });
+        out.push(FieldChange::TagAdded {
+            tag: (*tag).clone(),
+        });
     }
     for tag in a_tags.difference(&b_tags) {
-        out.push(FieldChange::TagRemoved { tag: (*tag).clone() });
+        out.push(FieldChange::TagRemoved {
+            tag: (*tag).clone(),
+        });
     }
 }
 
@@ -419,17 +441,16 @@ fn collect_attachments(
     out
 }
 
-fn diff_history(
-    a: &keepass::db::Entry,
-    b: &keepass::db::Entry,
-    out: &mut Vec<FieldChange>,
-) {
-    let la = a.history.as_ref().map(|h| h.get_entries().len()).unwrap_or(0);
-    let lb = b.history.as_ref().map(|h| h.get_entries().len()).unwrap_or(0);
+fn diff_history(a: &keepass::db::Entry, b: &keepass::db::Entry, out: &mut Vec<FieldChange>) {
+    let la = a.history.as_ref().map_or(0, |h| h.get_entries().len());
+    let lb = b.history.as_ref().map_or(0, |h| h.get_entries().len());
     if lb > la {
         out.push(FieldChange::HistoryGrew { added: lb - la });
     } else if lb < la {
-        out.push(FieldChange::HistoryRewritten { from_len: la, to_len: lb });
+        out.push(FieldChange::HistoryRewritten {
+            from_len: la,
+            to_len: lb,
+        });
     }
     // Same length but content might have been rewritten in place. Detecting
     // that requires recursive diff into history entries; it's a --strict-only
@@ -437,13 +458,12 @@ fn diff_history(
 }
 
 /// Field names suppressed by default (not in --strict).
-pub const NOISY_TIMESTAMP_FIELDS: &[&str] = &[
-    "LastAccessTime",
-    "UsageCount",
-    "LocationChanged",
-];
+pub const NOISY_TIMESTAMP_FIELDS: &[&str] = &["LastAccessTime", "UsageCount", "LocationChanged"];
 
-fn suppress_field_changes(fields: Vec<FieldChange>, opts: &DiffOptions) -> (Vec<FieldChange>, usize) {
+fn suppress_field_changes(
+    fields: Vec<FieldChange>,
+    opts: &DiffOptions,
+) -> (Vec<FieldChange>, usize) {
     if opts.strict {
         return (fields, 0);
     }
@@ -461,11 +481,9 @@ fn suppress_field_changes(fields: Vec<FieldChange>, opts: &DiffOptions) -> (Vec<
 
 fn is_suppressible(fc: &FieldChange) -> bool {
     match fc {
-        FieldChange::Modified { name, .. } |
-        FieldChange::Added { name, .. } |
-        FieldChange::Removed { name, .. } => {
-            NOISY_TIMESTAMP_FIELDS.contains(&name.as_str())
-        }
+        FieldChange::Modified { name, .. }
+        | FieldChange::Added { name, .. }
+        | FieldChange::Removed { name, .. } => NOISY_TIMESTAMP_FIELDS.contains(&name.as_str()),
         _ => false,
     }
 }
@@ -490,7 +508,8 @@ pub fn compute(a: &keepass::Database, b: &keepass::Database, opts: &DiffOptions)
     let va = a.config.version.to_string();
     let vb = b.config.version.to_string();
     if va != vb {
-        cs.warnings.push(DiffWarning::VersionMismatch { a: va, b: vb });
+        cs.warnings
+            .push(DiffWarning::VersionMismatch { a: va, b: vb });
     }
 
     // 2. Database-level metadata.
@@ -516,27 +535,30 @@ pub fn compute(a: &keepass::Database, b: &keepass::Database, opts: &DiffOptions)
     // 4. Modified entries: same UUID in both, same path (different path = Moved,
     //    already handled by symmetric_diff).
     for (uuid, na) in &map_a {
-        let Some(nb) = map_b.get(uuid) else { continue; };
+        let Some(nb) = map_b.get(uuid) else { continue };
         if na.path != nb.path {
             continue; // Moved — already accounted for
         }
-        if let (NodeKind::Entry, NodeKind::Entry) = (&na.kind, &nb.kind) {
-            let ea = entries_a.get(uuid).map(|er| &**er);
-            let eb = entries_b.get(uuid).map(|er| &**er);
-            if let (Some(ea), Some(eb)) = (ea, eb) {
-                let raw_fields = field_diff_entry(ea, eb, a, b, opts);
-                let (fields, suppressed) = suppress_field_changes(raw_fields, opts);
-                cs.summary.suppressed += suppressed;
-                if !fields.is_empty() {
-                    cs.summary.entries_modified += 1;
-                    cs.summary.fields_changed += fields.len();
-                    cs.changes.push(Change::Entry {
-                        uuid: *uuid,
-                        path: na.path.clone(),
-                        kind: EntryChangeKind::Modified { fields },
-                    });
-                }
-            }
+        if !matches!((&na.kind, &nb.kind), (NodeKind::Entry, NodeKind::Entry)) {
+            continue;
+        }
+        let Some(ea) = entries_a.get(uuid).map(|er| &**er) else {
+            continue;
+        };
+        let Some(eb) = entries_b.get(uuid).map(|er| &**er) else {
+            continue;
+        };
+        let raw_fields = field_diff_entry(ea, eb, a, b, opts);
+        let (fields, suppressed) = suppress_field_changes(raw_fields, opts);
+        cs.summary.suppressed += suppressed;
+        if !fields.is_empty() {
+            cs.summary.entries_modified += 1;
+            cs.summary.fields_changed += fields.len();
+            cs.changes.push(Change::Entry {
+                uuid: *uuid,
+                path: na.path.clone(),
+                kind: EntryChangeKind::Modified { fields },
+            });
         }
     }
 
@@ -557,10 +579,11 @@ fn diff_database_metadata(
 ) {
     // Name
     if a.meta.database_name != b.meta.database_name {
-        cs.changes.push(Change::Database(DatabaseChange::NameChanged {
-            from: a.meta.database_name.clone().unwrap_or_default(),
-            to: b.meta.database_name.clone().unwrap_or_default(),
-        }));
+        cs.changes
+            .push(Change::Database(DatabaseChange::NameChanged {
+                from: a.meta.database_name.clone().unwrap_or_default(),
+                to: b.meta.database_name.clone().unwrap_or_default(),
+            }));
         cs.summary.metadata_changed += 1;
     }
 
@@ -568,25 +591,27 @@ fn diff_database_metadata(
     let color_a = a.meta.color.as_ref().map(|c| format!("{c:?}"));
     let color_b = b.meta.color.as_ref().map(|c| format!("{c:?}"));
     if color_a != color_b {
-        cs.changes.push(Change::Database(DatabaseChange::ColorChanged {
-            from: color_a,
-            to: color_b,
-        }));
+        cs.changes
+            .push(Change::Database(DatabaseChange::ColorChanged {
+                from: color_a,
+                to: color_b,
+            }));
         cs.summary.metadata_changed += 1;
     }
 
     // Recycle bin UUID
     if a.meta.recyclebin_uuid != b.meta.recyclebin_uuid {
-        cs.changes.push(Change::Database(DatabaseChange::RecycleBinChanged {
-            from: a.meta.recyclebin_uuid,
-            to: b.meta.recyclebin_uuid,
-        }));
+        cs.changes
+            .push(Change::Database(DatabaseChange::RecycleBinChanged {
+                from: a.meta.recyclebin_uuid,
+                to: b.meta.recyclebin_uuid,
+            }));
         cs.summary.metadata_changed += 1;
     }
 }
 
-fn sort_changes(changes: &mut Vec<Change>) {
-    changes.sort_by(|x, y| sort_key(x).cmp(&sort_key(y)));
+fn sort_changes(changes: &mut [Change]) {
+    changes.sort_by_key(sort_key);
 }
 
 fn sort_key(c: &Change) -> (u8, String, Uuid) {
@@ -611,7 +636,7 @@ fn entry_field_value(entry: &keepass::db::Entry, name: &str) -> Option<String> {
 /// `entry.fields` is `pub HashMap<String, Value<String>>`. `Value::is_protected()` returns true
 /// for the `Protected(SecretBox<T>)` variant. Password is always treated protected regardless.
 fn entry_field_protected(entry: &keepass::db::Entry, name: &str) -> bool {
-    entry.fields.get(name).map(|v| v.is_protected()).unwrap_or(false)
+    entry.fields.get(name).is_some_and(|v| v.is_protected())
 }
 
 #[cfg(test)]
@@ -640,7 +665,10 @@ mod test {
         let map = tree_walk(&db, &DiffOptions::default());
         // root group + one entry
         assert_eq!(map.len(), 2);
-        let entry_node = map.values().find(|n| matches!(n.kind, NodeKind::Entry)).unwrap();
+        let entry_node = map
+            .values()
+            .find(|n| matches!(n.kind, NodeKind::Entry))
+            .unwrap();
         assert!(entry_node.path.display.ends_with("MyEntry"));
     }
 
@@ -659,7 +687,10 @@ mod test {
         let map = tree_walk(&db, &DiffOptions::default());
         // root + Sub group + NestedEntry
         assert_eq!(map.len(), 3);
-        let entry_node = map.values().find(|n| matches!(n.kind, NodeKind::Entry)).unwrap();
+        let entry_node = map
+            .values()
+            .find(|n| matches!(n.kind, NodeKind::Entry))
+            .unwrap();
         assert!(entry_node.path.display.contains("Sub"));
         assert!(entry_node.path.display.ends_with("NestedEntry"));
     }
@@ -692,8 +723,12 @@ mod test {
             FieldChange::Modified {
                 name: "Title".into(),
                 change: ValueChange {
-                    from: ValueDisplay::Plain { value: "old".into() },
-                    to: ValueDisplay::Plain { value: "new".into() },
+                    from: ValueDisplay::Plain {
+                        value: "old".into(),
+                    },
+                    to: ValueDisplay::Plain {
+                        value: "new".into(),
+                    },
                 },
             },
         ];
@@ -705,16 +740,18 @@ mod test {
 
     #[test]
     fn strict_disables_suppression() {
-        let opts = DiffOptions { strict: true, show_secrets: false, include_recycle_bin: false };
-        let input = vec![
-            FieldChange::Modified {
-                name: "LastAccessTime".into(),
-                change: ValueChange {
-                    from: ValueDisplay::Plain { value: "t1".into() },
-                    to: ValueDisplay::Plain { value: "t2".into() },
-                },
+        let opts = DiffOptions {
+            strict: true,
+            show_secrets: false,
+            include_recycle_bin: false,
+        };
+        let input = vec![FieldChange::Modified {
+            name: "LastAccessTime".into(),
+            change: ValueChange {
+                from: ValueDisplay::Plain { value: "t1".into() },
+                to: ValueDisplay::Plain { value: "t2".into() },
             },
-        ];
+        }];
         let (kept, suppressed) = suppress_field_changes(input, &opts);
         assert_eq!(kept.len(), 1);
         assert_eq!(suppressed, 0);
@@ -747,9 +784,11 @@ mod test {
         let opts = DiffOptions::default();
         let cs = compute(&a, &b, &opts);
         // At least one Database-level NameChanged change should be present.
-        let name_changes: Vec<_> = cs.changes.iter().filter(|c| {
-            matches!(c, Change::Database(DatabaseChange::NameChanged { .. }))
-        }).collect();
+        let name_changes: Vec<_> = cs
+            .changes
+            .iter()
+            .filter(|c| matches!(c, Change::Database(DatabaseChange::NameChanged { .. })))
+            .collect();
         assert_eq!(name_changes.len(), 1, "expected exactly one NameChanged");
         assert!(cs.summary.metadata_changed >= 1);
     }
@@ -796,16 +835,45 @@ mod test {
         // The two entries have different UUIDs (generated fresh), so each
         // will appear as Added / Removed in the symmetric diff.
         assert!(cs.summary.entries_added >= 1, "expected >=1 added entry");
-        assert!(cs.summary.entries_removed >= 1, "expected >=1 removed entry");
+        assert!(
+            cs.summary.entries_removed >= 1,
+            "expected >=1 removed entry"
+        );
 
-        let added_entries: Vec<_> = cs.changes.iter().filter(|c| {
-            matches!(c, Change::Entry { kind: EntryChangeKind::Added, .. })
-        }).collect();
-        let removed_entries: Vec<_> = cs.changes.iter().filter(|c| {
-            matches!(c, Change::Entry { kind: EntryChangeKind::Removed, .. })
-        }).collect();
-        assert!(!added_entries.is_empty(), "expected at least one Added entry change");
-        assert!(!removed_entries.is_empty(), "expected at least one Removed entry change");
+        let added_entries: Vec<_> = cs
+            .changes
+            .iter()
+            .filter(|c| {
+                matches!(
+                    c,
+                    Change::Entry {
+                        kind: EntryChangeKind::Added,
+                        ..
+                    }
+                )
+            })
+            .collect();
+        let removed_entries: Vec<_> = cs
+            .changes
+            .iter()
+            .filter(|c| {
+                matches!(
+                    c,
+                    Change::Entry {
+                        kind: EntryChangeKind::Removed,
+                        ..
+                    }
+                )
+            })
+            .collect();
+        assert!(
+            !added_entries.is_empty(),
+            "expected at least one Added entry change"
+        );
+        assert!(
+            !removed_entries.is_empty(),
+            "expected at least one Removed entry change"
+        );
     }
 
     #[test]
@@ -864,7 +932,8 @@ mod test {
         // Default opts: include_recycle_bin = false.
         let map = tree_walk(&db, &DiffOptions::default());
         // Should contain: root group, Live entry. NOT recycle bin group or Trashed entry.
-        let titles: Vec<_> = map.values()
+        let titles: Vec<_> = map
+            .values()
             .filter(|n| matches!(n.kind, NodeKind::Entry))
             .map(|n| n.path.display.clone())
             .collect();
@@ -877,7 +946,8 @@ mod test {
             "expected Trashed entry to be suppressed"
         );
         // Recycle Bin group itself must not appear.
-        let group_names: Vec<_> = map.values()
+        let group_names: Vec<_> = map
+            .values()
             .filter(|n| matches!(n.kind, NodeKind::Group))
             .map(|n| n.path.display.clone())
             .collect();
@@ -890,9 +960,13 @@ mod test {
     #[test]
     fn tree_walk_includes_recycle_bin_when_opted_in() {
         let db = db_with_recycle_bin();
-        let opts = DiffOptions { include_recycle_bin: true, ..DiffOptions::default() };
+        let opts = DiffOptions {
+            include_recycle_bin: true,
+            ..DiffOptions::default()
+        };
         let map = tree_walk(&db, &opts);
-        let titles: Vec<_> = map.values()
+        let titles: Vec<_> = map
+            .values()
             .filter(|n| matches!(n.kind, NodeKind::Entry))
             .map(|n| n.path.display.clone())
             .collect();
@@ -900,7 +974,8 @@ mod test {
             titles.iter().any(|t| t.ends_with("Trashed")),
             "expected Trashed entry when include_recycle_bin = true"
         );
-        let group_names: Vec<_> = map.values()
+        let group_names: Vec<_> = map
+            .values()
             .filter(|n| matches!(n.kind, NodeKind::Group))
             .map(|n| n.path.display.clone())
             .collect();
@@ -920,12 +995,17 @@ mod test {
         let opts = DiffOptions::default();
         let cs = compute(&db, &db, &opts);
         // No entries should appear as Added or Removed (same db, same UUIDs).
-        let trashed: Vec<_> = cs.changes.iter().filter(|c| {
-            match c {
+        let trashed: Vec<_> = cs
+            .changes
+            .iter()
+            .filter(|c| match c {
                 Change::Entry { path, .. } => path.display.contains("Trashed"),
                 _ => false,
-            }
-        }).collect();
-        assert!(trashed.is_empty(), "recycle bin entries should not appear in default diff");
+            })
+            .collect();
+        assert!(
+            trashed.is_empty(),
+            "recycle bin entries should not appear in default diff"
+        );
     }
 }
