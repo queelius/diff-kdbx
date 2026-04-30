@@ -23,10 +23,11 @@ mod test {
     #[test]
     fn database_rename_serializes_with_kind_field() {
         let mut cs = ChangeSet::default();
-        cs.changes.push(Change::Database(DatabaseChange::NameChanged {
-            from: "a".into(),
-            to: "b".into(),
-        }));
+        cs.changes
+            .push(Change::Database(DatabaseChange::NameChanged {
+                from: "a".into(),
+                to: "b".into(),
+            }));
         let out = render(&cs);
         assert!(out.contains("\"scope\": \"database\""));
         assert!(out.contains("\"kind\": \"name_changed\""));

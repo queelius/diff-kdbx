@@ -21,7 +21,10 @@ fn diff_cmd() -> Command {
 #[test]
 fn same_file_diffed_against_itself_exits_zero() {
     diff_cmd()
-        .args(["tests/fixtures/empty/before.kdbx", "tests/fixtures/empty/before.kdbx"])
+        .args([
+            "tests/fixtures/empty/before.kdbx",
+            "tests/fixtures/empty/before.kdbx",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("(no changes)"));
@@ -30,7 +33,10 @@ fn same_file_diffed_against_itself_exits_zero() {
 #[test]
 fn add_entry_pair_exits_one_and_reports_added() {
     diff_cmd()
-        .args(["tests/fixtures/add_entry/before.kdbx", "tests/fixtures/add_entry/after.kdbx"])
+        .args([
+            "tests/fixtures/add_entry/before.kdbx",
+            "tests/fixtures/add_entry/after.kdbx",
+        ])
         .assert()
         .code(1)
         .stdout(predicate::str::contains("+ ENTRY"));
@@ -95,16 +101,21 @@ fn textconv_emits_dump_for_one_file() {
 
 #[test]
 fn wrong_password_exits_two() {
-    Command::cargo_bin("diff-kdbx").unwrap()
+    Command::cargo_bin("diff-kdbx")
+        .unwrap()
         .env("KDBX_DIFF_PASSWORD", "wrong-password")
-        .args(["tests/fixtures/empty/before.kdbx", "tests/fixtures/empty/after.kdbx"])
+        .args([
+            "tests/fixtures/empty/before.kdbx",
+            "tests/fixtures/empty/after.kdbx",
+        ])
         .assert()
         .code(2);
 }
 
 #[test]
 fn missing_password_for_textconv_fails_closed() {
-    Command::cargo_bin("diff-kdbx").unwrap()
+    Command::cargo_bin("diff-kdbx")
+        .unwrap()
         // no KDBX_DIFF_PASSWORD env set
         .env_remove("KDBX_DIFF_PASSWORD")
         .args(["--textconv", "tests/fixtures/empty/before.kdbx"])

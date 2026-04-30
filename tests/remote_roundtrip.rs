@@ -86,7 +86,12 @@ fn setup_world() -> (TempDir, std::path::PathBuf, std::path::PathBuf) {
 
     // Create the source-side working clone
     let clone = Command::new("git")
-        .args(["clone", "-q", origin.to_str().unwrap(), clone_a.to_str().unwrap()])
+        .args([
+            "clone",
+            "-q",
+            origin.to_str().unwrap(),
+            clone_a.to_str().unwrap(),
+        ])
         .status()
         .expect("git clone of bare remote");
     assert!(clone.success());
@@ -167,8 +172,7 @@ fn diff_output_is_consistent_across_clones() {
 
     git(&clone_a, &["push", "-q", "origin", "main"]);
 
-    let diff_a = git(&clone_a, &["diff", "HEAD~1..HEAD", "--", "vault.kdbx"])
-        .stdout;
+    let diff_a = git(&clone_a, &["diff", "HEAD~1..HEAD", "--", "vault.kdbx"]).stdout;
 
     // Fresh clone, configure driver, take the same diff
     let clone_b = tmp.path().join("clone-b");
@@ -183,8 +187,7 @@ fn diff_output_is_consistent_across_clones() {
         .expect("git clone");
     configure_driver(&clone_b);
 
-    let diff_b = git(&clone_b, &["diff", "HEAD~1..HEAD", "--", "vault.kdbx"])
-        .stdout;
+    let diff_b = git(&clone_b, &["diff", "HEAD~1..HEAD", "--", "vault.kdbx"]).stdout;
 
     assert_eq!(
         diff_a,
