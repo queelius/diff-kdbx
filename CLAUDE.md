@@ -44,8 +44,8 @@ Read the spec before making design-level changes. Read the plan before adding ne
 ## Build and test
 
 ```bash
-cargo test --lib                    # Layer 1: 52 unit tests (no I/O)
-cargo test --features cli           # Layers 1-5: 71 active tests, 2 ignored
+cargo test --lib                    # Layer 1: 53 unit tests (no I/O)
+cargo test --features cli           # Layers 1-5: 72 active tests, 2 ignored
 cargo build --features cli          # CLI binary
 cargo run --features cli --bin gen-fixtures   # regenerate synthetic fixtures (master pw "test-password-do-not-use")
 cargo fmt --check                                          # CI gate
@@ -57,7 +57,7 @@ The five test layers (see `docs/testing.md` for the full pyramid):
 
 | Layer | Suite | Count |
 |---|---|---|
-| 1 | `cargo test --lib` (in-tree unit tests) | 52 |
+| 1 | `cargo test --lib` (in-tree unit tests) | 53 |
 | 2 | `tests/integration.rs` (CLI end-to-end) | 8 + 2 ignored |
 | 3 | `tests/determinism.rs` (cross-process byte-stability) | 3 |
 | 4 | `tests/git_driver.rs` (real git in tempdirs) | 5 |
@@ -87,14 +87,16 @@ This crate depends on `keepass = "0.12"` with features `["serialization", "save_
 - `entry.id().uuid()` to get a `Uuid`; UUIDs are wrapped in IDs.
 - `entry.fields: pub HashMap<String, Value<String>>`; `Value::is_protected()` is the protected check.
 - `entry.history` accessed via `History::get_entries()`, not direct field.
-- **`Entry.attachments` is `pub(crate)`**: enumerating `(name, content)` requires the `serialization` feature and a JSON round-trip. See `compute.rs::collect_attachments`. Filed upstream as [keepass-rs#314](https://github.com/sseemayer/keepass-rs/issues/314); replace with the proper API once it lands.
+- **`Entry.attachments` is `pub(crate)`**: enumerating `(name, content)` requires the `serialization` feature and a JSON round-trip. See `compute.rs::collect_attachments`. Filed upstream as [keepass-rs#314](https://github.com/sseemayer/keepass-rs/issues/314), resolved by [PR #321](https://github.com/sseemayer/keepass-rs/pull/321) (`EntryRef::attachments_named`); migrate `collect_attachments` to the new API when bumping keepass.
 - Entry/Group UUIDs are set internally with no public setter, so test fixtures inherently have varying UUIDs across regenerations.
+- `keepass` 0.12 stores group children in a `HashSet`, so iteration order is per-process randomized and differs even between clones of the same `Database`. diff-kdbx is immune only because it sorts everywhere: `dump.rs` sorts nodes by path, and `compute.rs::sort_changes` orders changes by (kind, path, UUID). Any new tree-walking or rendering code must impose its own ordering or it will break the textconv determinism contract (the Layer 3 tests catch this). Upstream contribution opportunity: ordered children / document order.
 
 ## Conventions
 
 - Library is I/O-free. The CLI binary owns file I/O, key resolution, and stdout/stderr/exit-code policy.
 - `compute()` and `dump()` are deterministic by construction. Determinism is tested across separate processes (`tests/determinism.rs`).
 - Suppression and masking are applied at compute time, not at render time. The change-set value is canonical for a given options bundle; renderers can't drift.
+- The recycle bin group and its contents are excluded from diff and dump output by default (handled at compute/dump time like other noise suppression); the CLI exposes `--include-recycle-bin` to restore them (issue #1, closed).
 - Exit codes mirror `/usr/bin/diff`: `0` no changes, `1` changes detected, `2` error.
 - Textconv mode buffers stdout (all-or-nothing) so git never sees partial dumps on error.
 - Synthetic fixtures are encrypted with `test-password-do-not-use`. Export `KDBX_DIFF_PASSWORD=test-password-do-not-use` before invoking the CLI against `tests/fixtures/**/*.kdbx` outside the test harness; the textconv path fails closed without it.

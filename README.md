@@ -19,11 +19,15 @@ output (textconv contract). Exit codes mirror `/usr/bin/diff` (0 no changes,
 
 ## Status
 
-v0.1. Library and CLI working. 71 active tests across five layers (unit,
+v0.1. Library and CLI working. 72 active tests across five layers (unit,
 integration, determinism, real-git driver, push/clone roundtrip). WASM build
 verified. Not yet on crates.io. The `keepass = "0.12"` API has known gaps
-that diff-kdbx works around; see [keepass-rs#314](https://github.com/sseemayer/keepass-rs/issues/314)
-for the upstream tracking issue.
+that diff-kdbx works around; the attachment-enumeration gap
+([keepass-rs#314](https://github.com/sseemayer/keepass-rs/issues/314)) has
+since been fixed upstream by
+[PR #321](https://github.com/sseemayer/keepass-rs/pull/321)
+(`EntryRef::attachments_named`), and diff-kdbx still carries its JSON
+workaround pending migration to the new API.
 
 ## Why
 
@@ -93,9 +97,15 @@ diff-kdbx tests/fixtures/add_entry/before.kdbx tests/fixtures/add_entry/after.kd
 Expected:
 
 ```
-summary: +1/-0/~0 entries, +0/-0/~0 groups, 0 fields, 0 suppressed
-+ ENTRY /Root/Chase
+summary: +1/-0/~0 entries, +1/-1/~0 groups, 0 fields, 0 suppressed
+- GROUP /
++ GROUP /
++ ENTRY //Test Entry
 ```
+
+The `- GROUP /` / `+ GROUP /` pair appears because the synthetic before/after
+files are built by separate `Database::new()` calls, so even the root group's
+UUID differs between them (see `tests/fixtures/MANIFEST.md`).
 
 Exit code 1 (changes detected). Try variations:
 
@@ -194,7 +204,7 @@ Commit:
 
 ```bash
 git add vault.kdbx
-git commit -m "add Chase entry"
+git commit -m "add Test Entry"
 ```
 
 ### 7. Browse history
@@ -324,9 +334,10 @@ cache and are nearly instant.
 - **Hash side channel.** If two entries share a password, their hash
   prefixes match. Diff output reveals password reuse. Useful for
   inadvertent audit, but also a side channel. Worth knowing.
-- **Recycle bin currently visible in dumps.** See
-  [issue #1](https://github.com/queelius/diff-kdbx/issues/1) for the
-  enhancement to hide it by default.
+- **Recycle bin hidden by default.** Diff and dump output omit the recycle
+  bin group and its contents to reduce noise. Pass `--include-recycle-bin`
+  to include them ([issue #1](https://github.com/queelius/diff-kdbx/issues/1),
+  closed).
 - **All-or-nothing stdout.** In `--textconv` mode, no partial output is
   emitted on error; git either gets a complete dump or empty stdout plus
   nonzero exit.

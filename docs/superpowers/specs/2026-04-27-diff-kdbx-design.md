@@ -3,7 +3,7 @@
 **Project:** diff-kdbx (first member of the *-kdbx ecosystem)
 **Date:** 2026-04-27
 **Author:** Alexander Towell
-**Status:** Design (pending implementation plan)
+**Status:** Implemented. v0.1 shipped 2026-05-02 (implementation plan at `docs/superpowers/plans/2026-04-27-diff-kdbx.md`, executed in full). Preserved as a historical design record.
 
 ## Goal
 

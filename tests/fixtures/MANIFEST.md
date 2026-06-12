@@ -37,7 +37,7 @@ several baseline tests across other suites.
 |---|---|
 | Origin | `gen-fixtures` (synthetic) |
 | Master password | `test-password-do-not-use` |
-| Contents | `before`: empty database. `after`: same database with one entry added under Root: `Title=Chase`, `UserName=alice@example.com`, `Password=hunter2` (protected), `URL=https://chase.com`. |
+| Contents | `before`: empty database. `after`: database with one entry under the root group: `Title=Test Entry`, `UserName=alice`, `Password=hunter2` (protected), `URL=https://example.com`. Note: `before` and `after` are built by separate `Database::new()` calls, so the root-group UUIDs differ; diffing the pair therefore also reports `- GROUP /` / `+ GROUP /` alongside the added entry. |
 | Regen | `cargo run --features cli --bin gen-fixtures` |
 
 Used by: `integration.rs::add_entry_pair_exits_one_and_reports_added`,

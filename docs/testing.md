@@ -137,8 +137,8 @@ Add a clone-b yourself when needed.
 - **Real GitHub / GitLab / etc.** The textconv driver doesn't care about the
   remote. Layer 5 uses a local bare repo and exercises the same protocol.
   If you want manual end-to-end validation against a real provider, configure
-  a test repo on that provider and follow the README's "Git integration"
-  section. But it's not part of the automated suite.
+  a test repo on that provider and follow the README's "Hands-on getting
+  started" walkthrough (steps 4-9). But it's not part of the automated suite.
 - **Cross-implementation roundtrips with KeePassXC.** Future work; would
   require KeePassXC on the test runner. See "manual smoke tests" below.
 
@@ -148,7 +148,8 @@ Some validation requires real-world ingredients we don't ship in CI. These
 are documented procedures, not automated tests:
 
 - **Real-vault diff.** Run `diff-kdbx` against your own personal vault to
-  confirm the dump format is sensible. See README's "Git integration" section.
+  confirm the dump format is sensible. See the README's "Hands-on getting
+  started" walkthrough.
 - **KeePassXC roundtrip.** Open a synthetic fixture in KeePassXC, edit it,
   save, then diff against the original. Validates that our writer's output
   is interoperable with KeePassXC's reader (and vice versa). Requires
