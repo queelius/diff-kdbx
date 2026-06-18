@@ -179,6 +179,18 @@ fn write_stdout(bytes: &[u8]) -> anyhow::Result<()> {
     }
 }
 
+/// Warn on stderr when --show-secrets would write plaintext to a non-TTY
+/// stdout (a pipe, a file, or git's capture in textconv mode), where the
+/// secrets are likely to be persisted. Applies to every mode that can emit
+/// secrets: standalone, textconv, and dump.
+fn warn_show_secrets_non_tty(show_secrets: bool) {
+    if show_secrets && !std::io::stdout().is_terminal() {
+        eprintln!(
+            "warning: --show-secrets with non-TTY stdout; secrets may be captured in logs/files"
+        );
+    }
+}
+
 fn run_textconv(cli: Cli) -> anyhow::Result<u8> {
     let path = cli.textconv.as_ref().expect("textconv guard");
     let rk = key::resolve(
@@ -195,6 +207,7 @@ fn run_textconv(cli: Cli) -> anyhow::Result<u8> {
         show_secrets: cli.show_secrets,
         include_recycle_bin: cli.include_recycle_bin,
     };
+    warn_show_secrets_non_tty(cli.show_secrets);
     let s = diff_kdbx::dump::dump(&db, &opts);
     // Buffer-then-write so stdout stays all-or-nothing.
     write_stdout(s.as_bytes())?;
@@ -217,6 +230,7 @@ fn run_dump(cli: Cli) -> anyhow::Result<u8> {
         show_secrets: cli.show_secrets,
         include_recycle_bin: cli.include_recycle_bin,
     };
+    warn_show_secrets_non_tty(cli.show_secrets);
     let s = diff_kdbx::dump::dump(&db, &opts);
     write_stdout(s.as_bytes())?;
     Ok(0)
@@ -255,11 +269,7 @@ fn run_standalone(cli: Cli) -> anyhow::Result<u8> {
     let db_a = keepass::Database::open(&mut fa, key::build_db_key(&rk_a)?)?;
     let db_b = keepass::Database::open(&mut fb, key::build_db_key(&rk_b)?)?;
 
-    if cli.show_secrets && !std::io::stdout().is_terminal() {
-        eprintln!(
-            "warning: --show-secrets with non-TTY stdout; secrets may be captured in logs/files"
-        );
-    }
+    warn_show_secrets_non_tty(cli.show_secrets);
 
     let opts = diff_kdbx::options::DiffOptions {
         strict: cli.strict,
