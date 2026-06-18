@@ -19,6 +19,10 @@ pub struct LocatedNode {
     pub uuid: Uuid,
     pub path: Path,
     pub kind: NodeKind,
+    /// The node's own name: a group's name or an entry's title. Stored
+    /// separately from the path so a rename can be detected by comparing names
+    /// directly, without parsing the escaped display path.
+    pub name: String,
 }
 
 /// Build a UUID-keyed map of all nodes (groups and entries) in a database.
@@ -70,6 +74,7 @@ fn walk_group_ref(
             uuid: group_uuid,
             path: build_path(name_stack, uuid_stack),
             kind: NodeKind::Group,
+            name: group.name.clone(),
         },
     );
 
@@ -92,6 +97,7 @@ fn walk_group_ref(
                 uuid: entry_uuid,
                 path: build_path(name_stack, uuid_stack),
                 kind: NodeKind::Entry,
+                name: title.to_owned(),
             },
         );
 
@@ -143,26 +149,66 @@ pub fn symmetric_diff(
             count_structural(&mut out.summary, node, StructEvent::Removed);
         }
     }
-    // Moved: in both, different path.
+    // Moved and renamed: in both. A node moved iff its IMMEDIATE parent
+    // changed (the second-to-last uuid in its path chain). Comparing display
+    // paths instead would misclassify a title or group rename (which changes
+    // the display but not the parent) as a move. Comparing the full ancestor
+    // chain would over-report: when a group moves, every descendant's chain
+    // also changes, but the descendants did not independently move (they rode
+    // along with the group), so only the group itself should be reported.
+    // Names change without the immediate parent changing, so they are handled
+    // separately: entry titles fall out of field_diff (Title is a field), and
+    // group renames are emitted here as a distinct Renamed change.
     for (uuid, na) in a {
-        if let Some(nb) = b.get(uuid) {
-            if na.path != nb.path {
-                out.changes.push(structure_change(
-                    *uuid,
-                    nb,
-                    StructEvent::Moved {
-                        to_path: nb.path.clone(),
-                    },
-                ));
-                count_structural(
-                    &mut out.summary,
-                    na,
-                    StructEvent::Moved {
-                        to_path: nb.path.clone(),
-                    },
-                );
-            }
+        let Some(nb) = b.get(uuid) else { continue };
+
+        if immediate_parent(&na.path) != immediate_parent(&nb.path) {
+            // Emit with the OLD node so the change carries the origin path,
+            // with to_path the new location.
+            out.changes.push(structure_change(
+                *uuid,
+                na,
+                StructEvent::Moved {
+                    to_path: nb.path.clone(),
+                },
+            ));
+            count_structural(
+                &mut out.summary,
+                na,
+                StructEvent::Moved {
+                    to_path: nb.path.clone(),
+                },
+            );
         }
+
+        // A group rename: same group, own name changed. Without this the
+        // rename would be invisible (it is no longer a move, and groups are
+        // not field-diffed). Entry title changes are reported by field_diff.
+        if matches!(na.kind, NodeKind::Group) && na.name != nb.name {
+            out.changes.push(Change::Group {
+                uuid: *uuid,
+                path: nb.path.clone(),
+                kind: GroupChangeKind::Renamed {
+                    from: na.name.clone(),
+                    to: nb.name.clone(),
+                },
+            });
+            out.summary.groups_modified += 1;
+        }
+    }
+}
+
+/// The UUID of a node's immediate parent group: the second-to-last uuid in the
+/// root-to-node chain, or `None` for the root (which has no parent). Two matched
+/// nodes sit in the same place iff their immediate parents are equal. Using the
+/// immediate parent rather than the full chain means moving a group reports only
+/// that group, not every descendant that rode along with it.
+fn immediate_parent(path: &Path) -> Option<Uuid> {
+    let n = path.uuids.len();
+    if n >= 2 {
+        Some(path.uuids[n - 2])
+    } else {
+        None
     }
 }
 
@@ -394,7 +440,7 @@ fn diff_attachments(
 /// 2. Building a `usize → &[u8]` content map from `db.iter_all_attachments()`, using
 ///    `att_ref.id().id()` as the numeric key.
 /// 3. Joining the two maps to produce a `name → HashPrefix` map.
-fn collect_attachments(
+pub(crate) fn collect_attachments(
     entry: &keepass::db::Entry,
     db: &keepass::Database,
 ) -> std::collections::BTreeMap<String, HashPrefix> {
@@ -532,13 +578,15 @@ pub fn compute(a: &keepass::Database, b: &keepass::Database, opts: &DiffOptions)
         .map(|er| (er.id().uuid(), er))
         .collect();
 
-    // 4. Modified entries: same UUID in both, same path (different path = Moved,
-    //    already handled by symmetric_diff).
+    // 4. Modified entries: same UUID in both. Field-diff runs on EVERY matched
+    //    entry pair, whether or not the entry moved or was renamed. A moved
+    //    entry that also changed a field would otherwise lose the field change
+    //    entirely (the old code skipped field-diff for any path difference). A
+    //    title rename surfaces here naturally as a Modified Title field change.
+    //    The change carries the entry's current path (nb), which differs from
+    //    the old path only when the entry moved or was renamed.
     for (uuid, na) in &map_a {
         let Some(nb) = map_b.get(uuid) else { continue };
-        if na.path != nb.path {
-            continue; // Moved — already accounted for
-        }
         if !matches!((&na.kind, &nb.kind), (NodeKind::Entry, NodeKind::Entry)) {
             continue;
         }
@@ -556,7 +604,7 @@ pub fn compute(a: &keepass::Database, b: &keepass::Database, opts: &DiffOptions)
             cs.summary.fields_changed += fields.len();
             cs.changes.push(Change::Entry {
                 uuid: *uuid,
-                path: na.path.clone(),
+                path: nb.path.clone(),
                 kind: EntryChangeKind::Modified { fields },
             });
         }
@@ -1006,6 +1054,222 @@ mod test {
         assert!(
             trashed.is_empty(),
             "recycle bin entries should not appear in default diff"
+        );
+    }
+
+    // ── move / rename field-preservation tests ──────────────────────────────
+
+    use keepass::db::fields::{PASSWORD, TITLE, USERNAME};
+
+    /// A title rename changes the entry's display path (the title is its last
+    /// segment) but not its UUID chain. Field-diff must still run, so the rename
+    /// surfaces as a Modified Title change. The old engine skipped field-diff on
+    /// any path difference and silently dropped the rename.
+    #[test]
+    fn title_change_is_reported_not_dropped() {
+        let mut a = empty_db();
+        let eid = {
+            let mut root = a.root_mut();
+            let mut e = root.add_entry();
+            let id = e.id();
+            e.edit(|x| {
+                x.set_unprotected(TITLE, "Old");
+                x.set_unprotected(USERNAME, "alice");
+            });
+            id
+        };
+        let mut b = a.clone();
+        b.entry_mut(eid)
+            .unwrap()
+            .edit(|x| x.set_unprotected(TITLE, "New"));
+
+        let cs = compute(&a, &b, &DiffOptions::default());
+
+        assert!(
+            !cs.changes.iter().any(|c| matches!(
+                c,
+                Change::Entry {
+                    kind: EntryChangeKind::Moved { .. },
+                    ..
+                }
+            )),
+            "a title rename is not a move"
+        );
+        let fields = cs
+            .changes
+            .iter()
+            .find_map(|c| match c {
+                Change::Entry {
+                    kind: EntryChangeKind::Modified { fields },
+                    ..
+                } => Some(fields),
+                _ => None,
+            })
+            .expect("title rename should produce a Modified entry");
+        assert!(
+            fields.iter().any(|f| matches!(
+                f,
+                crate::change_set::FieldChange::Modified { name, .. } if name == "Title"
+            )),
+            "the Title change must be reported"
+        );
+    }
+
+    /// An entry moved to another group AND edited in the same diff must report
+    /// BOTH the move and the field change. The old engine skipped field-diff for
+    /// any moved entry, so the edit vanished entirely.
+    #[test]
+    fn move_preserves_field_changes() {
+        let mut a = empty_db();
+        let archive = {
+            let mut root = a.root_mut();
+            root.add_group().edit(|g| g.name = "Archive".into()).id()
+        };
+        let eid = {
+            let mut root = a.root_mut();
+            let mut e = root.add_entry();
+            let id = e.id();
+            e.edit(|x| {
+                x.set_unprotected(TITLE, "Bank");
+                x.set_protected(PASSWORD, "old-secret");
+            });
+            id
+        };
+        let mut b = a.clone();
+        b.entry_mut(eid)
+            .unwrap()
+            .edit(|x| x.set_protected(PASSWORD, "new-secret"));
+        b.entry_mut(eid).unwrap().move_to(archive).expect("move");
+
+        let cs = compute(&a, &b, &DiffOptions::default());
+
+        assert!(
+            cs.changes.iter().any(|c| matches!(
+                c,
+                Change::Entry {
+                    kind: EntryChangeKind::Moved { .. },
+                    ..
+                }
+            )),
+            "the move should be reported"
+        );
+        let fields = cs
+            .changes
+            .iter()
+            .find_map(|c| match c {
+                Change::Entry {
+                    kind: EntryChangeKind::Modified { fields },
+                    ..
+                } => Some(fields),
+                _ => None,
+            })
+            .expect("the moved entry's password edit must still be reported");
+        assert!(
+            fields.iter().any(|f| matches!(
+                f,
+                crate::change_set::FieldChange::Modified { name, .. } if name == "Password"
+            )),
+            "the Password change must survive the move"
+        );
+    }
+
+    /// Renaming a group emits a Renamed change for that group, and does NOT
+    /// flag its descendants as moved (their parent UUID chain is unchanged). The
+    /// old engine produced no Renamed change and reported every descendant as a
+    /// cascading Moved.
+    #[test]
+    fn group_rename_emits_renamed_not_cascading_moves() {
+        let mut a = empty_db();
+        let gid = {
+            let mut root = a.root_mut();
+            root.add_group().edit(|g| g.name = "Web".into()).id()
+        };
+        {
+            let mut g = a.group_mut(gid).unwrap();
+            g.add_entry().edit(|e| e.set_unprotected(TITLE, "Child"));
+        }
+        let mut b = a.clone();
+        b.group_mut(gid).unwrap().edit(|g| g.name = "Sites".into());
+
+        let cs = compute(&a, &b, &DiffOptions::default());
+
+        let renamed = cs.changes.iter().any(|c| {
+            matches!(
+                c,
+                Change::Group {
+                    kind: GroupChangeKind::Renamed { .. },
+                    ..
+                }
+            )
+        });
+        assert!(renamed, "the group rename should be reported as Renamed");
+        assert!(
+            !cs.changes.iter().any(|c| matches!(
+                c,
+                Change::Entry {
+                    kind: EntryChangeKind::Moved { .. },
+                    ..
+                }
+            )),
+            "descendants of a renamed group must not be reported as moved"
+        );
+        assert!(
+            !cs.changes.iter().any(|c| matches!(
+                c,
+                Change::Group {
+                    kind: GroupChangeKind::Moved { .. },
+                    ..
+                }
+            )),
+            "a rename is not a move"
+        );
+    }
+
+    /// Moving a group reports the group as Moved but does NOT report its child
+    /// entries as moved: they rode along with the group, their immediate parent
+    /// (the group) is unchanged. Comparing the full ancestor chain would
+    /// wrongly cascade a Moved onto every descendant.
+    #[test]
+    fn moving_a_group_does_not_cascade_move_its_entries() {
+        let mut a = empty_db();
+        let (web, dest) = {
+            let mut root = a.root_mut();
+            let web = root.add_group().edit(|g| g.name = "Web".into()).id();
+            let dest = root.add_group().edit(|g| g.name = "Archive".into()).id();
+            (web, dest)
+        };
+        {
+            let mut g = a.group_mut(web).unwrap();
+            g.add_entry().edit(|e| e.set_unprotected(TITLE, "Child"));
+        }
+        let mut b = a.clone();
+        b.group_mut(web).unwrap().move_to(dest).expect("move group");
+
+        let cs = compute(&a, &b, &DiffOptions::default());
+
+        let group_moves = cs
+            .changes
+            .iter()
+            .filter(|c| {
+                matches!(
+                    c,
+                    Change::Group {
+                        kind: GroupChangeKind::Moved { .. },
+                        ..
+                    }
+                )
+            })
+            .count();
+        assert_eq!(group_moves, 1, "exactly the moved group should be reported");
+        assert!(
+            !cs.changes.iter().any(|c| matches!(
+                c,
+                Change::Entry {
+                    kind: EntryChangeKind::Moved { .. },
+                    ..
+                }
+            )),
+            "the child entry rode along and must not be reported as moved"
         );
     }
 }

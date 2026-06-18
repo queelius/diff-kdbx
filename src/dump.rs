@@ -63,11 +63,16 @@ fn dump_groups(db: &keepass::Database, opts: &DumpOptions, out: &mut String) {
         .collect();
 
     let mut keys: Vec<&Uuid> = map.keys().collect();
-    // Sort by display path for a stable, human-readable ordering.
+    // Sort by display path, then by UUID as a tiebreaker. KDBX permits two
+    // siblings with the same name (and untitled entries collide on the
+    // "<untitled>" fallback), so display paths are not unique. Without the UUID
+    // tiebreaker their relative order would follow keepass's randomized HashSet
+    // iteration, breaking the byte-stable-output contract the textconv driver
+    // and cachetextconv rely on. compute's sort_key already includes the UUID.
     keys.sort_by(|a, b| {
         let pa = &map[a].path.display;
         let pb = &map[b].path.display;
-        pa.cmp(pb)
+        pa.cmp(pb).then_with(|| a.cmp(b))
     });
     for uuid in keys {
         let node = &map[uuid];
@@ -77,7 +82,7 @@ fn dump_groups(db: &keepass::Database, opts: &DumpOptions, out: &mut String) {
             }
             NodeKind::Entry => {
                 if let Some(er) = entries.get(uuid) {
-                    dump_entry(er, *uuid, &node.path, opts, out);
+                    dump_entry(er, *uuid, &node.path, db, opts, out);
                 }
             }
         }
@@ -88,10 +93,13 @@ fn dump_groups(db: &keepass::Database, opts: &DumpOptions, out: &mut String) {
 ///
 /// Fields are emitted in a fixed order so that a single-field change produces
 /// a single changed line in `git diff --word-diff`.
+const STANDARD_FIELDS: &[&str] = &["Title", "UserName", "Password", "URL", "Notes"];
+
 fn dump_entry(
     er: &keepass::db::EntryRef<'_>,
     uuid: Uuid,
     path: &Path,
+    db: &keepass::Database,
     opts: &DumpOptions,
     out: &mut String,
 ) {
@@ -100,7 +108,7 @@ fn dump_entry(
     let _ = writeln!(out, "ENTRY {} [uuid:{}]", path.display, short);
 
     // Standard KeePass fields in a canonical order.
-    for &name in &["Title", "UserName", "Password", "URL", "Notes"] {
+    for &name in STANDARD_FIELDS {
         let raw = er.get(name).unwrap_or("").to_string();
         // Password is always treated as protected; other fields defer to the
         // Value::is_protected() flag stored in entry.fields.
@@ -116,6 +124,30 @@ fn dump_entry(
         }
     }
 
+    // Custom (non-standard) fields, sorted by name for stable output. Without
+    // these, an edit to any custom field (including KeePassXC's protected `otp`
+    // TOTP seed) would produce a byte-identical dump and show no git diff. The
+    // same masking policy applies, so a protected custom field shows its hash.
+    let mut custom: Vec<&String> = er
+        .fields
+        .keys()
+        .filter(|n| !STANDARD_FIELDS.contains(&n.as_str()))
+        .collect();
+    custom.sort();
+    for name in custom {
+        let raw = er.get(name).unwrap_or("").to_string();
+        let protected = er.fields.get(name).is_some_and(|v| v.is_protected());
+        let display = ValueDisplay::from_value(&raw, protected, opts.show_secrets);
+        match display {
+            ValueDisplay::Plain { value } => {
+                let _ = writeln!(out, "  field {}: {}", name, value);
+            }
+            ValueDisplay::Masked { hash } => {
+                let _ = writeln!(out, "  field {}: <hash:{}>", name, hash);
+            }
+        }
+    }
+
     // Tags (sorted for stability).
     if !er.tags.is_empty() {
         let mut tags = er.tags.clone();
@@ -123,10 +155,15 @@ fn dump_entry(
         let _ = writeln!(out, "  tags: {}", tags.join(", "));
     }
 
-    // Attachment count via EntryRef::attachments() — public iterator that
-    // avoids the pub(crate) entry.attachments field.
-    let att_count = er.attachments().count();
-    let _ = writeln!(out, "  attachments: {}", att_count);
+    // Attachments by name with a content hash, sorted by name (collect_attachments
+    // returns a BTreeMap, so already ordered). Emitting only a count hid edits
+    // that swap or rename an attachment while keeping the count constant. The
+    // hash is the same 8-char SHA-256 prefix used for masked field values.
+    let attachments = crate::compute::collect_attachments(er, db);
+    for (name, hash) in &attachments {
+        let _ = writeln!(out, "  attachment {}: <hash:{}>", name, hash);
+    }
+    let _ = writeln!(out, "  attachments: {}", attachments.len());
 
     // History length.
     let hist_len = er.history.as_ref().map_or(0, |h| h.get_entries().len());
@@ -242,6 +279,132 @@ mod test {
         assert!(
             s.contains("Recycle Bin"),
             "Recycle Bin group should appear with include_recycle_bin = true"
+        );
+    }
+
+    // ── custom field, attachment, and ordering tests ────────────────────────
+
+    use keepass::db::fields::{TITLE, USERNAME};
+
+    /// A custom (non-standard) field appears in the dump, so an edit to it is
+    /// visible in a git diff. The old dump emitted only the five standard
+    /// fields, hiding edits to custom fields including the protected `otp` seed.
+    #[test]
+    fn dump_includes_custom_fields() {
+        let mut db = keepass::Database::new();
+        {
+            let mut root = db.root_mut();
+            root.add_entry().edit(|e| {
+                e.set_unprotected(TITLE, "Svc");
+                e.set_unprotected("ApiKey", "key-1");
+            });
+        }
+        let s = dump(&db, &DumpOptions::default());
+        assert!(
+            s.contains("field ApiKey: key-1"),
+            "custom field should appear in dump:\n{s}"
+        );
+    }
+
+    /// Editing a custom field changes the dump (so git diff shows it). Uses a
+    /// clone so the two dumps differ only in the custom field, not the UUID.
+    #[test]
+    fn dump_custom_field_edit_changes_output() {
+        let mut a = keepass::Database::new();
+        let eid = {
+            let mut root = a.root_mut();
+            let mut e = root.add_entry();
+            let id = e.id();
+            e.edit(|x| {
+                x.set_unprotected(TITLE, "Svc");
+                x.set_unprotected("ApiKey", "key-1");
+            });
+            id
+        };
+        let mut b = a.clone();
+        b.entry_mut(eid)
+            .unwrap()
+            .edit(|x| x.set_unprotected("ApiKey", "key-2"));
+        assert_ne!(
+            dump(&a, &DumpOptions::default()),
+            dump(&b, &DumpOptions::default()),
+            "a custom field edit must change the dump"
+        );
+    }
+
+    /// Attachments appear by name with a content hash, so swapping or renaming
+    /// an attachment is visible even when the count is unchanged.
+    #[test]
+    fn dump_includes_attachment_names() {
+        let mut db = keepass::Database::new();
+        {
+            let mut root = db.root_mut();
+            root.add_entry().edit(|e| {
+                e.set_unprotected(TITLE, "Doc");
+                e.add_attachment(
+                    "recovery.txt",
+                    keepass::db::Value::unprotected(b"codes".to_vec()),
+                );
+            });
+        }
+        let s = dump(&db, &DumpOptions::default());
+        assert!(
+            s.contains("attachment recovery.txt: <hash:"),
+            "attachment name and hash should appear in dump:\n{s}"
+        );
+    }
+
+    /// Two entries with the same title in the same group share a display path.
+    /// The dump must order them by UUID (the tiebreaker), independent of
+    /// keepass's randomized HashSet iteration, or the textconv output is not
+    /// byte-stable.
+    #[test]
+    fn dump_orders_duplicate_paths_by_uuid() {
+        let mut db = keepass::Database::new();
+        let (id1, id2) = {
+            let mut root = db.root_mut();
+            let a = {
+                let mut e = root.add_entry();
+                let id = e.id();
+                e.edit(|x| {
+                    x.set_unprotected(TITLE, "Dup");
+                    x.set_unprotected(USERNAME, "a");
+                });
+                id
+            };
+            let b = {
+                let mut e = root.add_entry();
+                let id = e.id();
+                e.edit(|x| {
+                    x.set_unprotected(TITLE, "Dup");
+                    x.set_unprotected(USERNAME, "b");
+                });
+                id
+            };
+            (a, b)
+        };
+        let s = dump(&db, &DumpOptions::default());
+        let short1 = id1.uuid().to_string()[..8].to_string();
+        let short2 = id2.uuid().to_string()[..8].to_string();
+        let pos1 = s
+            .find(&format!("uuid:{short1}"))
+            .expect("first entry in dump");
+        let pos2 = s
+            .find(&format!("uuid:{short2}"))
+            .expect("second entry in dump");
+        let (first, second) = if id1.uuid() < id2.uuid() {
+            (pos1, pos2)
+        } else {
+            (pos2, pos1)
+        };
+        assert!(
+            first < second,
+            "duplicate-path entries must be dumped in UUID order"
+        );
+        assert_eq!(
+            s,
+            dump(&db, &DumpOptions::default()),
+            "dump must be byte-stable across calls"
         );
     }
 }
