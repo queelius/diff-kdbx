@@ -10,9 +10,14 @@
 /// The vault model and shared rules this crate's API is expressed in.
 pub use kdbx_core;
 
+mod change_set;
 // The property maps are wired into compute and dump in the next tasks.
 #[allow(dead_code)]
 mod properties;
+
+pub use change_set::{
+    Change, ChangeSet, DiffWarning, KdfWeakening, NodeChange, NodeStatus, PropertyChange, Summary,
+};
 
 pub use properties::{
     AutoTypeKey, ColorRole, FieldName, GroupFlag, HeaderKey, HistoryKey, KdfKind, MetaKey,
