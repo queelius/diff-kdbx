@@ -21,10 +21,11 @@ fixtures are managed.
 
 | Layer | Suite | What it catches |
 |---|---|---|
-| 1. Unit | `cargo test --lib` (68) | Logic of each module on hand-built snapshots: property mapping (with serde tripwires that fail when kdbx-core adds a model field nobody maps), change-set shapes, compute rules (moves, renames, protection toggles, history at the cap, noise, recycle bin, KDF weakening), dump and renderer formats and line safety |
+| 1. Unit | `cargo test --lib` (73) and the binary's own (2) | Logic of each module on hand-built snapshots: property mapping (with serde tripwires that fail when kdbx-core adds a model field nobody maps), change-set shapes, compute rules (moves, renames, protection toggles, history at the cap, noise, recycle bin, KDF weakening), dump and renderer formats, the label and value grammar read back from rendered lines, every JSON wire leaf |
 | 2. Snapshots | `tests/snapshots.rs` | Text, JSON and dump output of every fixture pair, pinned with `insta` (the JSON contract lives here) |
 | 3. CLI | `tests/integration.rs`, `tests/cli.rs` | Flag parsing, key resolution (password, key file, key-file only, separate keys), the `fingerprint` subcommand, exit codes, every fixture end to end |
-| 4. Properties | `tests/mirror.rs` | proptest over generated snapshots: `compute(a, a)` is empty and `compute(a, b)` mirrors `compute(b, a)` |
+| 4. Properties | `tests/mirror.rs` | proptest over generated snapshots (trees, history, recycle bin, headers): `compute(a, a)` is empty and `compute(a, b)` mirrors `compute(b, a)` |
+| 4b. Canary | `tests/canary.rs` | No secret of any fixture vault (read from the vault itself) appears in any text, JSON or dump output |
 | 5. API | `tests/public_api.rs` | Every public item, signature, field and enum variant, named from outside the crate |
 | 6. Determinism | `tests/determinism.rs` | Byte-stable dump and diff output across processes |
 | 7. Git driver | `tests/git_driver.rs` | Real `git diff` / `log -p` / `show` with the driver, fail-closed on a wrong password |

@@ -46,10 +46,19 @@ line replaces them.
   time with a count, and `--strict` means the same in diff and dump.
 - The recycle-bin rule ignores a recycle-bin UUID that names the root group.
 - Paths use the ecosystem grammar (no root-group name, `\/` escapes, `:N`
-  ordinals for same-named siblings), and every rendered name and value goes
-  through `kdbx_core::text`, so no vault content can forge an output line.
-- The JSON document is a versioned contract: `format_version: 1`, with the
-  fingerprint key's derivation parameters and salt recorded.
+  ordinals for same-named siblings).
+- One reversible text grammar for the diff and the dump: closed-set names are
+  bare, and every vault-controlled string beside renderer syntax (custom
+  field names, tags and other keys, plain values, paths) is one quoted token,
+  so no vault content can forge a line, a label, a sealed value or a ` -> `.
+- History items are matched by modification time, then by content, then by
+  position, so trimming at the history cap is one removal and one addition.
+- The JSON document is a versioned contract defined by diff-kdbx itself
+  (`format_version: 1`, flat leaves, no other crate's serde output), with the
+  fingerprint key's derivation parameters and salt recorded. `render_json` is
+  the only JSON entry point; public types do not implement `Serialize`.
+- Every enum variant with named fields is `#[non_exhaustive]` with a
+  constructor; `render_text` takes `&TextOptions`.
 
 ### CLI
 - Opens files with keepass 0.15 (KDBX 3.1, 4.0, 4.1) and captures them with
@@ -65,7 +74,11 @@ line replaces them.
   source exists, an empty interactive password with `--key-file` means none,
   and `--no-password` says so explicitly.
 - New: `diff-kdbx fingerprint --field NAME --entry PATH-OR-UUID VAULT` prints
-  a field's full keyed fingerprint, to verify recorded fingerprints.
+  a field's full keyed fingerprint, to verify recorded fingerprints;
+  `--params` and `--salt` reproduce keys recorded elsewhere (a two-file
+  diff's JSON, mcp-kdbx audit logs).
+- `--separate-keys` refuses a shared `--key-file`; an empty
+  `KDBX_DIFF_PASSWORD` with a key file means no password; a panic exits 2.
 - Removed: `--color` (it did nothing). Exit codes are unchanged (0 no changes,
   1 changes, 2 error).
 - The fixture generator is an example (`cargo run --example gen_fixtures`),

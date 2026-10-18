@@ -88,15 +88,17 @@ Regenerate fixtures with `cargo run --example gen_fixtures` (master password
 `test-password-do-not-use`), then `INSTA_UPDATE=always cargo test --test
 snapshots` and review every snapshot diff.
 
-## Tests (as of 0.1.0): 128 with `--features cli`
+## Tests (as of 0.1.0): 142 with `--features cli`
 
 | Suite | What | Count |
 |---|---|---|
-| `cargo test --lib` | unit: properties (incl. serde tripwires), change set, compute, dump, renderers, options | 68 |
+| `cargo test --lib` | unit: properties (incl. serde tripwires), change set, compute (incl. history pairing), dump, label and value grammar read-back, JSON wire leaves, options | 73 |
+| binary unit tests | panic-to-exit-2 guard, `--params` parsing | 2 |
 | `tests/snapshots.rs` | insta text, JSON and dump snapshots for every fixture pair (64 snapshots) | 2 |
-| `tests/integration.rs` | CLI end to end over every fixture | 32 |
-| `tests/cli.rs` | key resolution, `fingerprint` subcommand, `--separate-keys`, JSON key provenance | 9 |
-| `tests/mirror.rs` | proptest: `compute(a, a)` empty, `compute(a, b)` mirrors `compute(b, a)` | 2 |
+| `tests/integration.rs` | CLI end to end over every fixture | 33 |
+| `tests/cli.rs` | key resolution, `fingerprint` subcommand (`--params`, `--salt`), `--separate-keys`, two-file key parameters, JSON key provenance | 14 |
+| `tests/canary.rs` | no vault secret in any text, JSON or dump output of any fixture pair | 1 |
+| `tests/mirror.rs` | proptest: `compute(a, a)` empty, `compute(a, b)` mirrors `compute(b, a)` (trees, history, recycle bin, headers) | 2 |
 | `tests/public_api.rs` | every public item, signature, field and variant pinned | 3 |
 | `tests/determinism.rs` | byte-stable output across processes | 3 |
 | `tests/git_driver.rs` | real git in tempdirs | 5 |
