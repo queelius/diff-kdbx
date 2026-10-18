@@ -1,132 +1,66 @@
 # diff-kdbx
 
-**Semantic diff for KeePass KDBX files.** A Rust CLI, a `git` textconv driver,
-and a reusable library. Use it to put your password vault under version
-control and get meaningful diffs out of `git diff`, `git log -p`, and
-`git show` instead of "Binary files differ."
+**Semantic diff for KeePass KDBX files.** A Rust library, a CLI, and a `git`
+textconv driver. Put your password vault under version control and get
+meaningful diffs out of `git diff`, `git log -p` and `git show` instead of
+"Binary files differ."
 
 ```
-summary: +1/-0/~1 entries, +0/-0/~0 groups, 2 fields, 0 suppressed
-+ ENTRY /Banking/Citi
-~ ENTRY /Banking/Chase
-  ~ Password: <hash:a1b2c3d4> -> <hash:d4e5f6a7>
-  ~ URL: https://chase.com -> https://www.chase.com
+$ diff-kdbx tests/fixtures/move_and_edit/before.kdbx tests/fixtures/move_and_edit/after.kdbx
+summary: entries +0/-0/~1 (1 moved), groups +0/-0/~0 (0 moved), properties 1, database 0, suppressed 4
+~ ENTRY /Personal/VPN (moved from /Work/VPN)
+  ~ URL: https://vpn.example -> https://vpn2.example
+
+$ diff-kdbx tests/fixtures/password_change/before.kdbx tests/fixtures/password_change/after.kdbx
+summary: entries +0/-0/~1 (0 moved), groups +0/-0/~0 (0 moved), properties 1, database 0, suppressed 3
+~ ENTRY /Personal/Bank
+  ~ Password: <sealed:96ea7ab3> -> <sealed:8422c055>
 ```
 
-Default secret masking. Default suppression of noisy timestamps. Deterministic
-output (textconv contract). Exit codes mirror `/usr/bin/diff` (0 no changes,
-1 changes, 2 error).
+Secrets are shown as keyed fingerprints, never in plaintext unless you ask.
+Timestamp noise is suppressed by default. Output is deterministic (the
+textconv contract). Exit codes mirror `/usr/bin/diff` (0 no changes, 1
+changes, 2 error).
 
 ## Status
 
-v0.2. Library and CLI working on `keepass` 0.15, which reads both KDBX 4.0
-and KDBX 4.1. 97 tests across five layers (unit, integration, determinism,
-real-git driver, push/clone roundtrip), with a fixture for every kind of change
-(add, remove, move, group rename, password, custom field, tag, attachment,
-history, open-and-save noise, cross-version). WASM build verified. See
-[CHANGELOG.md](CHANGELOG.md).
+0.1.0, unreleased. diff-kdbx is built on
+[`kdbx-core`](https://github.com/queelius/kdbx-core), the shared vault model
+of the `*-kdbx` ecosystem: the library is a pure function of two
+`kdbx_core::model::Snapshot`s and names no keepass type, so a keepass upgrade
+never forces a new diff-kdbx release line. The CLI reads KDBX 3.1, 4.0 and
+4.1 with keepass 0.15. See [CHANGELOG.md](CHANGELOG.md).
 
-## Why
+Until both crates are published, diff-kdbx depends on kdbx-core by path:
+check the two repositories out side by side (`kdbx/diff-kdbx`,
+`kdbx/kdbx-core`).
 
-`git diff` on a `.kdbx` file shows "Binary files differ" because the file is
-encrypted and binary. That breaks version control for vault files: you cannot
-audit, review, revert, or browse history in any meaningful way.
-
-diff-kdbx parses both sides, computes a structural diff (UUID-based identity,
-"moved" detection, granular per-field changes), and emits either tree-shaped
-text or structured JSON. Registered as a git textconv driver, it makes
-`*.kdbx` files behave like normal text files in every git workflow. Pair this
-with a private remote (any git remote, no GitHub-specific coupling) and your
-vault is version-controlled, distributed, and recoverable.
-
-## Hands-on getting started
-
-The walkthrough takes 15 minutes. By the end you will have diff-kdbx
-installed, the git driver configured, a real vault under git, and a
-day-to-day workflow.
-
-### 1. Prerequisites
-
-| Tool | Why | Check |
-|---|---|---|
-| `rustup` and `cargo` (Rust 1.85+) | Build diff-kdbx from source | `cargo --version` |
-| `git` (any modern version) | The whole point | `git --version` |
-| KeePassXC (optional) | Create and edit `.kdbx` files for real-world testing | `keepassxc --version` |
-
-If you don't have KeePassXC, you can use diff-kdbx's bundled synthetic
-fixtures for the first few sections without ever touching real data. The
-walkthrough flags where the paths diverge.
-
-### 2. Install
+## Install
 
 ```bash
+git clone https://github.com/queelius/kdbx-core.git
 git clone https://github.com/queelius/diff-kdbx.git
 cd diff-kdbx
 cargo install --path . --features cli
 ```
 
-This compiles the release binary and places `diff-kdbx` in `~/.cargo/bin/`.
-Make sure that directory is on your PATH:
+Rust 1.89 or later (keepass 0.15 requires it).
 
-```bash
-echo $PATH | tr ':' '\n' | grep -q "$HOME/.cargo/bin" && echo OK || echo "Add ~/.cargo/bin to PATH"
-```
+## Quick start (no real data needed)
 
-Verify:
-
-```bash
-diff-kdbx --help
-```
-
-You should see usage with all flags. If you get "command not found,"
-your `~/.cargo/bin` is not on PATH.
-
-### 3. First diff (no real data needed)
-
-The repo ships synthetic fixtures under `tests/fixtures/`. They use a
-published throwaway password (`test-password-do-not-use`).
+The repository ships synthetic fixtures with a published throwaway password.
 
 ```bash
 export KDBX_DIFF_PASSWORD='test-password-do-not-use'
-diff-kdbx tests/fixtures/add_entry/before.kdbx tests/fixtures/add_entry/after.kdbx
-```
-
-Expected:
-
-```
-summary: +1/-0/~0 entries, +1/-1/~0 groups, 0 fields, 0 suppressed
-- GROUP /
-+ GROUP /
-+ ENTRY //Test Entry
-```
-
-The `- GROUP /` / `+ GROUP /` pair appears because the synthetic before/after
-files are built by separate `Database::new()` calls, so even the root group's
-UUID differs between them (see `tests/fixtures/MANIFEST.md`).
-
-Exit code 1 (changes detected). Try variations:
-
-```bash
-# JSON output for machine consumption
-diff-kdbx --format=json tests/fixtures/add_entry/before.kdbx tests/fixtures/add_entry/after.kdbx | head -40
-
-# Textconv dump (what git will see when invoking the driver)
-diff-kdbx --textconv tests/fixtures/add_entry/after.kdbx
-
-# Reveal plaintext for protected fields (TTY only by default; warns if piped)
-diff-kdbx --show-secrets --textconv tests/fixtures/add_entry/after.kdbx
-
-# An open-and-save with no edits: default mode suppresses the timestamp noise...
-diff-kdbx tests/fixtures/noisy_resave/before.kdbx tests/fixtures/noisy_resave/after.kdbx
-# ...and --strict turns suppression off, showing LastAccessTime and UsageCount
+diff-kdbx tests/fixtures/move_and_edit/before.kdbx tests/fixtures/move_and_edit/after.kdbx
+diff-kdbx --format=json tests/fixtures/password_change/before.kdbx tests/fixtures/password_change/after.kdbx
+diff-kdbx --textconv tests/fixtures/password_change/after.kdbx     # what git sees
 diff-kdbx --strict tests/fixtures/noisy_resave/before.kdbx tests/fixtures/noisy_resave/after.kdbx
 ```
 
-If all of that worked, the binary is healthy. Now wire it into git.
+## Git setup
 
-### 4. Configure the git diff driver
-
-One-time per-machine. Add to `~/.gitconfig`:
+Once per machine:
 
 ```bash
 git config --global diff.kdbx.textconv 'diff-kdbx --textconv'
@@ -134,249 +68,272 @@ git config --global diff.kdbx.binary true
 git config --global diff.kdbx.cachetextconv true
 ```
 
-What each setting does:
-
-- `textconv`: tells git "for this file type, run this command on each side
-  before computing the diff." git diffs the converted text, not the raw
-  binary blob.
-- `binary = true`: marks the file type as binary so git does not try to
-  show it as text in other contexts.
-- `cachetextconv = true`: git caches the textconv output keyed by blob hash,
-  so repeated `git log -p` calls do not re-decrypt every commit. Safe
-  because diff-kdbx output is deterministic.
-
-The driver definition lives in `~/.gitconfig`. The "use this driver for
-`*.kdbx`" part is per-repo, set via `.gitattributes` (next).
-
-### 5. Initialize a git repo for your vault
+Once per repository:
 
 ```bash
-mkdir -p ~/test-vault
-cd ~/test-vault
-git init -b main
-echo "*.kdbx diff=kdbx" > .gitattributes
-git add .gitattributes
-git commit -m "configure diff driver for kdbx files"
+echo '*.kdbx diff=kdbx' >> .gitattributes
+git add .gitattributes && git commit -m 'diff kdbx files with diff-kdbx'
 ```
 
-The `.gitattributes` line binds `*.kdbx` files to the `kdbx` diff driver
-you configured globally in step 4.
+Then `git diff vault.kdbx`, `git log -p vault.kdbx` and `git show HEAD
+vault.kdbx` show the textconv dumps' line diff. The driver never prompts: set
+`KDBX_DIFF_PASSWORD` (and/or put `--key-file` in the textconv command) in the
+shell that runs git. `cachetextconv` is safe because the dump is
+deterministic, and it matters: each dump derives a fingerprint key with the
+vault's own KDF cost (see below). More recipes: `examples/git-config.md`.
 
-### 6. Add your vault and make a change
+The driver definition lives in your git config, not in the repository, so a
+fresh clone on another machine needs the `git config` step again.
 
-If you have KeePassXC: create a fresh test database `~/test-vault/vault.kdbx`
-(NOT your real vault), pick a disposable password like `hunter2`, add 2-3
-fake entries.
+## CLI
 
-If you don't: copy a synthetic fixture instead:
+```
+diff-kdbx [OPTIONS] <A> <B>            # diff two files (exit 0 / 1 / 2)
+diff-kdbx [OPTIONS] --textconv <FILE>  # dump one file for git (never prompts)
+diff-kdbx [OPTIONS] --dump <FILE>      # the same dump, for reading
+diff-kdbx fingerprint --field <NAME> --entry <PATH-OR-UUID> [--key-file F] [--no-password] <VAULT>
+```
+
+| Option | Meaning |
+|---|---|
+| `--format text\|json` | Output of a two-file diff (default `text`) |
+| `--strict` | Show noise too (timestamps that move on every save, UI state, settings timestamps); same meaning in diff and dump |
+| `--include-recycle-bin` | Show the recycle bin group and its contents (hidden by default) |
+| `--show-secrets` | Capture protected values in plaintext (warns on a non-TTY stdout) |
+| `--key-file PATH` | Key file for both files |
+| `--no-password` | The vault has no password (key file only) |
+| `--separate-keys` | Different keys for A and B (`--key-file-a`, `--key-file-b`, `KDBX_DIFF_PASSWORD_A`, `KDBX_DIFF_PASSWORD_B`) |
+
+**Key resolution** (first match wins): `--no-password` (requires
+`--key-file`), then `KDBX_DIFF_PASSWORD`, then a TTY prompt (never in
+`--textconv`; an empty answer with `--key-file` means no password), then the
+key file alone.
+
+## Output
+
+**Text diff.** A summary line, `warning:` lines, then one record per changed
+node: `+`/`-`/`~`, `GROUP` or `ENTRY`, and the node's vault path (the
+ecosystem path grammar: no root-group name, `\/` escapes, `:2` for
+same-named siblings ordered by UUID, trailing `/` for groups). A move is part
+of the record (`(moved from /Work/VPN)`), so a moved-and-edited entry is one
+record. Each changed property is one line: `+ label: value`, `- label:
+value`, `~ label: before -> after`. Multi-line values (Notes) print as `| `
+continuation lines, so they still diff line by line and can never forge a
+structural line.
+
+**Dump** (`--textconv`, `--dump`). A `DATABASE` block, then `GROUP <path>
+[uuid:...]` and `ENTRY <path> [uuid:...]` blocks in tree order, each listing
+every property in canonical order:
+
+```
+ENTRY /Personal/Bank [uuid:00000011-d1ff-4000-8000-000000000000]
+  Title: Bank
+  UserName: alice
+  Password: <sealed:8422c055>
+  URL: https://bank.example
+  QualityCheck: true
+  CreationTime: 2026-01-01T09:00:00Z
+  Expires: false
+```
+
+The dump and the diff are built from the same per-node property map, so they
+cannot disagree: everything the diff can report (fields and their protection
+flags, tags, attachments, history items, times, icons, colors, auto-type,
+custom data, group settings, `<Meta>` settings, the KDF and ciphers) is in
+the dump.
+
+**Values.** Sealed values show the first 8 hex characters of their
+fingerprint (`<sealed:8422c055>`). A plain value whose protection flag is set
+(a protected Title, or anything under `--show-secrets`) is marked
+`(protected)`; a sealed value whose flag is off (a Password whose protection
+was turned off) is marked `(unprotected)`, so turning protection off is a
+visible change even when the value is not. Colors are `#RRGGBB`.
+
+**Noise.** Default mode leaves out `LastAccessTime`, `UsageCount`,
+`LastModificationTime`, `LocationChanged`, a node's previous parent, group
+expansion, the generator stamp, last-selected and top-visible groups, the
+`*Changed` settings timestamps, custom-data and custom-icon modification
+times, and deleted-object tombstones, and counts what it left out.
+`MasterKeyChanged` is never noise.
+
+**Warnings.** `warning: KDBX version differs: 4.0 -> 4.1`, and `warning: KDF
+weakened: ...` when the key derivation got cheaper to attack (Argon2 memory or
+passes lowered, Argon2 replaced by AES-KDF, AES-KDF rounds lowered, or a
+recognized KDF replaced by an unrecognized one).
+
+## The JSON contract
+
+`--format=json` (and `render_json` in the library) emits one document:
+
+```json
+{
+  "format_version": 1,
+  "fingerprint_key": {
+    "params": {"memory_kib": 65536, "iterations": 3, "lanes": 1},
+    "salt": "00000001-d1ff-4000-8000-000000000000"
+  },
+  "changes": [
+    {
+      "scope": "entry",
+      "uuid": "00000011-d1ff-4000-8000-000000000000",
+      "path": "/Personal/Bank",
+      "status": "modified",
+      "moved_from": null,
+      "changes": [
+        {
+          "property": {"kind": "field", "key": "Password"},
+          "before": {"type": "field", "value": {"protected": true, "value": {"sealed": "96ea7ab3...42ac"}}},
+          "after": {"type": "field", "value": {"protected": true, "value": {"sealed": "8422c055...2e88"}}}
+        }
+      ]
+    }
+  ],
+  "summary": {"entries_added": 0, "entries_removed": 0, "entries_modified": 1, "entries_moved": 0,
+              "groups_added": 0, "groups_removed": 0, "groups_modified": 0, "groups_moved": 0,
+              "node_properties": 1, "database_properties": 0, "suppressed": 3},
+  "warnings": []
+}
+```
+
+(Fingerprints are abbreviated here; the output has all 64 hex characters.)
+
+- `changes[]` is ordered: the database record (`"scope": "database"`, with
+  `changes`), then groups, then entries, each by path and then UUID. A node
+  record has `uuid`, `path` (`null` for a node without a path, such as an
+  entry with an empty title), and `status`: `added`, `removed`, or `modified`
+  with `moved_from` and `changes`.
+- A property is `{"kind", "key"}`: `field` (key: the field name), `tag`,
+  `attachment`, `time` (key: the KDBX element name, such as `UsageCount`),
+  `meta` (`DatabaseName`, `ProtectPassword`, ...), `header` (`Kdf`,
+  `KdfMemory`, ...), `custom_data`, `history` (key: `{"item": {"modified",
+  "index"}, "property": {...}}`), and the rest listed in the rustdoc of
+  `Property`.
+- A value is `{"type", "value"}`: `text`, `sealed` (64 hex), `field`
+  (`{"protected", "value": {"plain": ...} | {"sealed": ...}}`), `bool`,
+  `int`, `uint`, `time` (`YYYY-MM-DDTHH:MM:SSZ`), `uuid`, `color`
+  (`#RRGGBB`), `icon`, `attachment`, `blob`, `present`, `format`, `kdf`,
+  `outer_cipher`, `inner_cipher`, `compression`, `obfuscation`. A missing side
+  of a change is `null`.
+- `fingerprint_key` records how the fingerprint key was derived (Argon2id
+  parameters and salt), so anyone holding the vault can reproduce every
+  fingerprint; it is `null` when the key was not derived from a vault.
+- Breaking any of this bumps `format_version`. Snapshot tests pin the shape
+  for every fixture pair.
+
+## Sealing and fingerprints
+
+A secret never reaches the diff engine in plaintext unless you ask. The CLI
+captures each file into a `kdbx-core` snapshot with **fingerprint sealing**:
+every secret field value (protected, or the Password even when its flag is
+off, but never the Title, which is the entry's address), every custom-data
+value (KeePassXC keeps browser-integration keys there), and every
+attachment's content is replaced by a **keyed fingerprint**,
+HMAC-SHA256 under a per-vault key.
+
+The key is derived with Argon2id from your password and key file, salted with
+the vault's root group UUID, with parameters never below the vault's own KDF
+(nor below 64 MiB / 3 passes / 1 lane). An unkeyed hash of a short secret is
+a lookup table (a 4-digit PIN falls in 10,000 tries); a keyed fingerprint is
+only as attackable as the vault itself. Consequences:
+
+- Fingerprints are stable across runs (git textconv dumps each blob in a
+  separate process), so an unchanged secret dumps identically.
+- A two-file diff derives one key from file A (with the stronger of the two
+  vaults' parameters), so an unchanged secret compares equal even when the
+  master password changed between the two; the master-key change itself is
+  reported (`MasterKeyChanged`).
+- In textconv output each blob uses its own key, so changing the master
+  password changes every sealed value in that commit's `git diff`.
+- Equal fingerprints within one vault reveal equal values (password reuse).
+  That is useful for audits and a side channel worth knowing.
+- Deriving the key costs about as much as unlocking the vault, once per file
+  per run. Turn on `cachetextconv`.
+- `--show-secrets` captures plaintext instead (attachments stay
+  fingerprinted). It warns when stdout is not a terminal.
+
+To check a recorded fingerprint (for example from an mcp-kdbx audit log),
+print a field's full fingerprint with the vault's own key:
 
 ```bash
-cp ~/path/to/diff-kdbx/tests/fixtures/add_entry/before.kdbx ~/test-vault/vault.kdbx
-export KDBX_DIFF_PASSWORD='test-password-do-not-use'
+diff-kdbx fingerprint --field Password --entry /Personal/Bank vault.kdbx
+diff-kdbx fingerprint --field otp --entry 00000012-d1ff-4000-8000-000000000000 vault.kdbx
 ```
 
-Either way, commit it:
+Its first 8 characters match the `<sealed:...>` in that vault's dump.
 
-```bash
-cd ~/test-vault
-git add vault.kdbx
-git commit -m "initial vault"
+## Library
+
+```rust
+use diff_kdbx::kdbx_core::capture::keepass_0_15::{capture, header};
+use diff_kdbx::kdbx_core::fingerprint::{DeriveParams, FingerprintKey, KeyMaterial};
+use diff_kdbx::kdbx_core::model::Sealing;
+use diff_kdbx::{DiffOptions, JsonOptions, compute, dump, render_json, render_text};
+
+// Open with keepass 0.15 (kdbx-core feature "keepass-0_15"), then:
+let params = DeriveParams::for_header(Some(&header(&db_a)));
+let material = KeyMaterial::new(Some(b"password".as_slice()), None);
+let key = FingerprintKey::derive(&material, db_a.root().id().uuid(), &params)?;
+let a = capture(&db_a, &Sealing::Fingerprint(&key));
+let b = capture(&db_b, &Sealing::Fingerprint(&key));
+
+let cs = compute(&a, &b, &DiffOptions::default());
+print!("{}", render_text(&cs));
+print!("{}", render_json(&cs, &JsonOptions::default()));
+print!("{}", dump(&a, &Default::default()));
 ```
 
-Now make a change. Either edit in KeePassXC and save, or with the synthetic
-path swap in the "after" version:
+A process that only compares within itself (an editor's staged diff, say)
+can seal with `FingerprintKey::from_bytes` and a random key, and skip the
+KDF. The library performs no I/O, reads no clock, depends on no keepass
+version, and builds for `wasm32-unknown-unknown`.
 
-```bash
-cp ~/path/to/diff-kdbx/tests/fixtures/add_entry/after.kdbx vault.kdbx
-```
+## How it differs from `keepass-diff`
 
-Run `git diff` and watch the textconv driver kick in:
+[`keepass-diff`](https://crates.io/crates/keepass-diff) is an existing CLI
+that compares two KDBX files. diff-kdbx exists for a different job, version
+control of a vault:
 
-```bash
-git diff vault.kdbx
-```
+- a git textconv mode with a deterministic, line-safe dump of every property;
+- identity by UUID, so moves, renames and moved-and-edited entries are single
+  records rather than a removal plus an addition;
+- secrets as keyed fingerprints, so a diff can say "the password changed"
+  without printing it or a crackable hash of it;
+- typed noise suppression for the timestamps every save touches;
+- a library API over a keepass-free snapshot and a versioned JSON contract
+  for other tools (mcp-kdbx uses it for staged-change diffs).
 
-You should see a structured diff showing the added entry, NOT "Binary files
-differ." If you do see "Binary files differ," see Troubleshooting below.
+## Security notes
 
-Commit:
-
-```bash
-git add vault.kdbx
-git commit -m "add Test Entry"
-```
-
-### 7. Browse history
-
-These all work now:
-
-```bash
-git log -p vault.kdbx              # full audit trail of every textconv'd change
-git show HEAD vault.kdbx           # latest commit's diff
-git show HEAD~1 vault.kdbx         # previous commit's diff
-git diff HEAD~1 HEAD -- vault.kdbx # any range
-git log --oneline vault.kdbx       # quick browsable history
-```
-
-### 8. Recovery
-
-Accidentally deleted an entry and committed it? Roll back:
-
-```bash
-git revert HEAD                    # creates a new commit that undoes HEAD
-```
-
-Want to inspect an old version without committing?
-
-```bash
-git checkout HEAD~3 -- vault.kdbx  # vault.kdbx now matches 3 commits ago
-# Open in KeePassXC, copy what you need
-git checkout HEAD -- vault.kdbx    # restore the current version
-```
-
-### 9. Sync to a remote (optional)
-
-The diff driver is purely local. For sync across machines, push to any git
-remote: GitHub (private), GitLab (private), Codeberg, Gitea, sourcehut, your
-own server over SSH, anywhere. The remote sees only encrypted ciphertext.
-
-```bash
-cd ~/test-vault
-git remote add origin <your-repo-url>
-git push -u origin main
-```
-
-On a second machine, after a clone:
-
-```bash
-git clone <your-repo-url> vault-clone
-cd vault-clone
-# .gitattributes came along with the clone, but the global diff driver
-# config did NOT (it lives in ~/.gitconfig, not in the repo).
-# Set it up on this machine: redo step 4. Then:
-export KDBX_DIFF_PASSWORD='...'
-git log -p vault.kdbx              # textconv'd diffs over the cloned history
-```
-
-### 10. Day-to-day workflow
-
-Once configured, the typical loop:
-
-```bash
-# Edit vault.kdbx in KeePassXC, save
-cd ~/your-vault-repo
-git diff vault.kdbx                # sanity-check what changed
-git add vault.kdbx
-git commit -m "rotate Chase password"
-git push                           # if you have a remote
-```
-
-A monthly habit worth forming: scan
-`git log -p vault.kdbx --since='1 month ago'` to review what changed. Catches
-accidental damage and surfaces patterns ("rotated 8 passwords last month;
-three of them more than once").
+- The `.kdbx` stays encrypted in git; a remote sees only ciphertext.
+- `KDBX_DIFF_PASSWORD` lives in your environment and can leak through shell
+  history, `/proc/<pid>/environ`, or child processes. Treat it like any
+  password variable.
+- Git keeps history: a secret committed once stays in every clone.
+- In `--textconv` mode stdout is all-or-nothing: on any error git gets empty
+  output and a nonzero exit, never a partial dump.
+- Titles are never sealed (they are addresses). A vault that needs secret
+  titles is out of scope.
 
 ## Troubleshooting
 
-### "Binary files differ" instead of a real diff
-
-One of three things:
-
-- **Driver not configured in this shell.** Check
-  `git config --get diff.kdbx.textconv`. If empty, redo step 4.
-- **`.gitattributes` missing or wrong.** From the repo root: `cat .gitattributes`.
-  Should contain `*.kdbx diff=kdbx`.
-- **`KDBX_DIFF_PASSWORD` not set.** The textconv command is non-interactive;
-  without the env var it fails closed and git falls back to "Binary files differ."
-
-### "Error: could not decrypt"
-
-Wrong password. Test outside git:
-
-```bash
-diff-kdbx --textconv vault.kdbx
-```
-
-If that fails, the password is wrong. If it succeeds but `git diff` still
-fails, the env var isn't propagating to git's child process: run `git diff`
-in the same shell where you ran `export KDBX_DIFF_PASSWORD=...`.
-
-### Driver hangs
-
-Should never happen. If it does, ctrl-C and check whether something is
-asking for input. The textconv mode never prompts. Force non-interactive
-by ensuring `KDBX_DIFF_PASSWORD` is set.
-
-### `git log -p` is slow on first run
-
-Expected. Git invokes the textconv driver once per commit's blob, decrypts,
-dumps. With `cachetextconv = true` (recommended), subsequent runs hit the
-cache and are nearly instant.
-
-## Security
-
-- **The .kdbx is encrypted.** Pushing to a remote does not leak plaintext.
-  An attacker who steals the repo gets the same ciphertext they would have
-  gotten by stealing the file directly.
-- **Passwords appear masked by default.** Diff and dump output show
-  protected fields as 8-char SHA-256 hash prefixes. `--show-secrets`
-  reveals plaintext and warns to stderr if stdout is non-TTY.
-- **Env var caveat.** `KDBX_DIFF_PASSWORD` lives in your shell env. It can
-  leak via shell history, `/proc/$$/environ`, parent process inheritance,
-  CI logs. Treat it like any password env var. A future `KDBX_DIFF_KEY_HELPER`
-  interface (v0.2) will let you fetch from a keyring or `pass` instead.
-- **Git tracks history forever.** A password committed once and rotated
-  out is still in `git log` accessible to anyone who clones the repo. This
-  is the same risk as committing any sensitive value to git: the cure is
-  `git filter-repo` or rebuilding history. Don't commit your master
-  password to the repo.
-- **Hash side channel.** If two entries share a password, their hash
-  prefixes match. Diff output reveals password reuse. Useful for
-  inadvertent audit, but also a side channel. Worth knowing.
-- **Recycle bin hidden by default.** Diff and dump output omit the recycle
-  bin group and its contents to reduce noise. Pass `--include-recycle-bin`
-  to include them ([issue #1](https://github.com/queelius/diff-kdbx/issues/1),
-  closed).
-- **All-or-nothing stdout.** In `--textconv` mode, no partial output is
-  emitted on error; git either gets a complete dump or empty stdout plus
-  nonzero exit.
-
-## Library API
-
-```rust
-use std::fs::File;
-let mut fa = File::open("a.kdbx")?;
-let mut fb = File::open("b.kdbx")?;
-let key = keepass::DatabaseKey::new().with_password("...");
-let a = keepass::Database::open(&mut fa, key.clone())?;
-let b = keepass::Database::open(&mut fb, key)?;
-
-let cs = diff_kdbx::compute::compute(&a, &b, &Default::default());
-let text = diff_kdbx::render::text::render(&cs, &Default::default());
-println!("{}", text);
-
-let json = diff_kdbx::render::json::render(&cs);
-println!("{}", json);
-
-// Or just dump one side (textconv-style, deterministic)
-let dump = diff_kdbx::dump::dump(&a, &Default::default());
-println!("{}", dump);
-```
-
-The library is I/O-free and compiles cleanly to `wasm32-unknown-unknown`,
-so it is reusable from browser-side tooling. (Eventually `web-kdbx` will
-consume it that way; see the `*-kdbx` ecosystem docs.)
+- **"Binary files differ"**: the driver is not configured in this shell
+  (`git config --get diff.kdbx.textconv`), `.gitattributes` lacks `*.kdbx
+  diff=kdbx`, or `KDBX_DIFF_PASSWORD` is not set (the driver fails closed).
+- **"Error: unlocking ..."**: wrong password or key file. Test with
+  `diff-kdbx --dump vault.kdbx`. For a vault without a password, pass
+  `--key-file` (and `--no-password` to be explicit).
+- **Slow `git log -p`**: every dump derives a fingerprint key at the vault's
+  KDF cost. Enable `cachetextconv`.
 
 ## Where to go next
 
 | You want to | Read |
 |---|---|
-| File a bug or request a feature | [Issues](https://github.com/queelius/diff-kdbx/issues) |
-| Understand the design rationale | `docs/superpowers/specs/2026-04-27-diff-kdbx-design.md` |
-| See the implementation plan | `docs/superpowers/plans/2026-04-27-diff-kdbx.md` |
-| Add a new test or fixture | `docs/testing.md` and `tests/fixtures/MANIFEST.md` |
-| See alternative git config recipes | `examples/git-config.md` |
+| Report a bug | [Issues](https://github.com/queelius/diff-kdbx/issues) |
+| Understand the design | `kdbx-core`'s `docs/superpowers/specs/2026-10-18-kdbx-core-design.md` (section 4) and this repo's `docs/superpowers/specs/2026-04-27-diff-kdbx-design.md` |
+| Add a test or fixture | `docs/testing.md` and `tests/fixtures/MANIFEST.md` |
+| See git config recipes | `examples/git-config.md` |
 
 ## License
 
-MIT.
+MIT. See [LICENSE](LICENSE).

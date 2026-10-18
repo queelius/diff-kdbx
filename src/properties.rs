@@ -490,6 +490,14 @@ impl GroupFlag {
     }
 }
 
+impl HistoryKey {
+    /// The key of the `index`-th history item (0-based) last modified at
+    /// `modified`.
+    pub fn new(modified: Option<Timestamp>, index: usize) -> Self {
+        HistoryKey { modified, index }
+    }
+}
+
 impl FieldName {
     /// The field named `name` (standard when it is one of the five KDBX
     /// names, compared exactly).

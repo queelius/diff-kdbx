@@ -12,6 +12,9 @@ documentation = "https://docs.rs/diff-kdbx"
 readme = "README.md"
 keywords = ["keepass", "kdbx", "diff", "git"]
 categories = ["command-line-utilities", "cryptography"]
+# Fixtures and snapshots stay in the package so `cargo test` works from the
+# tarball; CI config, agent notes, design docs and proptest seeds do not.
+exclude = [".github/", "CLAUDE.md", "docs/superpowers/", "*.proptest-regressions"]
 
 [dependencies]
 # The vault model and the ecosystem's shared rules. No keepass, no KDF by

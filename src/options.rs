@@ -1,4 +1,4 @@
-//! Options for [`compute`](crate::compute) and `dump`.
+//! Options for [`compute`](crate::compute) and [`dump`](crate::dump).
 //!
 //! Both take the same two choices with the same meaning, so `--strict` and
 //! `--include-recycle-bin` behave identically in diff and dump mode. Whether
@@ -40,7 +40,7 @@ pub struct DiffOptions {
     pub recycle_bin: RecycleBin,
 }
 
-/// Options for `dump`.
+/// Options for [`dump`](crate::dump).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct DumpOptions {

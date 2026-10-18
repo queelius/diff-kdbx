@@ -3,67 +3,69 @@
 All notable changes to diff-kdbx. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break the
-library API).
+library API or the JSON `format_version`).
 
-The 0.1 and 0.2 lines differ in the `keepass` crate they build against, and
-`keepass` types appear in diff-kdbx's public API (`compute(&Database, ...)`). A
-caller must use the same `keepass` version as the diff-kdbx line it picks:
-0.1.x for `keepass` 0.12, 0.2.x for `keepass` 0.15. The 0.1 line is maintained
-on the `release/0.1` branch for callers that still need `keepass` 0.12 (which,
-unlike 0.13+, can save KDBX 4.0).
+## [0.1.0] - unreleased
 
-## [0.2.0] - 2026-10-18
+The first published release. diff-kdbx was rebuilt on
+[`kdbx-core`](https://github.com/queelius/kdbx-core): the library is a pure
+function of two keepass-free snapshots, so it no longer ties its callers to a
+keepass version.
 
-### Changed
-- Builds against `keepass` 0.15.3 (was 0.12). Reads KDBX 4.1 as well as 4.0.
-- Minimum supported Rust version is 1.89 (required by `keepass` 0.15).
-- `compute::field_diff_entry` takes `&EntryRef` for both entries and no longer
-  takes the two databases (an `EntryRef` carries its database's attachment pool).
-- Attachments are enumerated with `EntryRef::attachments_named()`, replacing a
-  JSON round-trip workaround; `keepass`'s `serialization` feature is no longer
-  required.
-- Warnings render as text (`warning: KDBX version differs: KDBX4.0 -> KDBX4.1`)
-  instead of Rust debug output.
+Two earlier release candidates, a local `0.1.0` (on keepass 0.12) and `0.2.0`
+(on keepass 0.15), with a `release/0.1` maintenance branch, exposed keepass
+types in their API. They were never pushed as releases or published, and this
+line replaces them.
 
-### Added
-- Entry timestamps are diffed: `FieldChange::TimeChanged { field, from, to }`
-  with a `TimeField` enum covering the seven KDBX `<Times>` values. Default mode
-  suppresses access time, usage count, last-modification time, and
-  location-changed; `--strict` shows them. Creation and expiry changes are always
-  reported (ExpiryTime only when the entry actually expires).
-- Fixtures for every kind of change, with fixed UUIDs and timestamps so their
-  content is reproducible: `remove_entry`, `move_entry`, `rename_group`,
-  `tag_diff`, `attachment_change`, `custom_field`, `history_grew`,
-  `noisy_resave`, plus a frozen KDBX 4.0 file for read and cross-version
-  coverage. The two previously ignored integration tests now run.
+### Library
+- `compute(&Snapshot, &Snapshot, &DiffOptions) -> ChangeSet`,
+  `dump(&Snapshot, &DumpOptions) -> String`, `render_text(&ChangeSet)` and
+  `render_json(&ChangeSet, &JsonOptions)`, all re-exported at the crate root
+  along with `kdbx_core` itself. Engine internals are private and every public
+  type that may grow is `#[non_exhaustive]`.
+- One property map per node (database, group, entry) is the single source of
+  both the diff and the dump, so they can no longer disagree. Everything the
+  model holds is reported: fields with their protection flags, tags,
+  attachments, every history item's properties, the seven times, icons,
+  colors, URL override, quality check, auto-type, custom data, group notes,
+  tags and flags, `<Meta>` settings, the outer header (KDF and parameters,
+  ciphers, compression), and deleted-object tombstones.
+- One record per changed node: a move is `moved_from` on the record, so a
+  moved-and-edited entry or a moved-and-renamed group is one record and
+  counts once. Every `Summary` counter is computed from the records.
+- History items are keyed by modification time, so trimming at the history
+  cap and editing at the cap are precise additions and removals.
+- Secrets arrive sealed (keyed fingerprints from kdbx-core); the diff shows
+  `<sealed:xxxxxxxx>` and marks protection where it is not implied, so turning
+  protection off is visible even when the value is unchanged. The Title is
+  never sealed: it is the entry's address.
+- Typed warnings: `VersionMismatch` and `KdfWeakened` (Argon2 memory or
+  passes lowered, Argon2 replaced by AES-KDF, AES-KDF rounds lowered, a
+  recognized KDF replaced by an unrecognized one).
+- Noise is a typed classification (`Property::is_noise`), applied at compute
+  time with a count, and `--strict` means the same in diff and dump.
+- The recycle-bin rule ignores a recycle-bin UUID that names the root group.
+- Paths use the ecosystem grammar (no root-group name, `\/` escapes, `:N`
+  ordinals for same-named siblings), and every rendered name and value goes
+  through `kdbx_core::text`, so no vault content can forge an output line.
+- The JSON document is a versioned contract: `format_version: 1`, with the
+  fingerprint key's derivation parameters and salt recorded.
 
-### Fixed
-- `--strict` had nothing to show: noise suppression matched field names, but
-  `keepass` keeps timestamps in `entry.times`, so they were never diffed.
-- A custom field whose name matched a timestamp (for example `UsageCount`) was
-  silently suppressed as noise. Noise is now a property of `TimeField`, never of
-  a field name.
-- `password_change` and similar fixtures previously diffed as an entry removed
-  plus an entry added (independently generated UUIDs), so the masked
-  field-level `Modified` path was not exercised end to end.
+### CLI
+- Opens files with keepass 0.15 (KDBX 3.1, 4.0, 4.1) and captures them with
+  fingerprint sealing; `--show-secrets` captures plaintext instead.
+- Fingerprint keys are derived with Argon2id from the vault's key material,
+  never cheaper than the vault's own KDF: per file for `--textconv` and
+  `--dump`, once from side A (with the stronger parameters of both files)
+  for a two-file diff.
+- Key-file-only vaults work: a key file alone is the key when no password
+  source exists, an empty interactive password with `--key-file` means none,
+  and `--no-password` says so explicitly.
+- New: `diff-kdbx fingerprint --field NAME --entry PATH-OR-UUID VAULT` prints
+  a field's full keyed fingerprint, to verify recorded fingerprints.
+- Removed: `--color` (it did nothing). Exit codes are unchanged (0 no changes,
+  1 changes, 2 error).
+- The fixture generator is an example (`cargo run --example gen_fixtures`),
+  so `cargo install` no longer installs it.
 
-### Removed
-- `compute::NOISY_TIMESTAMP_FIELDS` (superseded by `TimeField::is_noise`).
-
-## [0.1.0] - 2026-10-18
-
-First release line, on `keepass` 0.12. Library, CLI, and git textconv driver.
-Minimum supported Rust version 1.85.1 (required by `keepass` 0.12).
-
-### Fixed (since the initial v0.1 work)
-- Field edits were dropped for moved or renamed entries; moves are now
-  classified by immediate parent UUID, group renames are reported as `Renamed`,
-  and moving a group no longer reports every descendant as moved.
-- The textconv dump omitted custom fields and attachment identity, so editing a
-  custom field (including a protected `otp` TOTP seed) produced no git diff.
-- Dump ordering was nondeterministic for siblings with the same name; ties now
-  break by UUID.
-- `--show-secrets` now warns on a non-TTY stdout in textconv and dump modes too.
-
-[0.2.0]: https://github.com/queelius/diff-kdbx/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/queelius/diff-kdbx/releases/tag/v0.1.0

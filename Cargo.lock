@@ -461,12 +461,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "data-encoding"
-version = "2.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
-
-[[package]]
 name = "diff-kdbx"
 version = "0.1.0"
 dependencies = [
@@ -780,7 +774,6 @@ version = "0.1.0"
 dependencies = [
  "argon2",
  "chrono",
- "data-encoding",
  "form_urlencoded",
  "hmac 0.12.1",
  "keepass",
@@ -789,7 +782,6 @@ dependencies = [
  "sha2 0.10.9",
  "subtle",
  "unicode-normalization",
- "unicode-properties",
  "uuid",
  "zeroize",
 ]
@@ -1377,12 +1369,6 @@ checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
 dependencies = [
  "tinyvec",
 ]
-
-[[package]]
-name = "unicode-properties"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7df058c713841ad818f1dc5d3fd88063241cc61f49f5fbea4b951e8cf5a8d71d"
 
 [[package]]
 name = "unicode-xid"

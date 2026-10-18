@@ -45,11 +45,18 @@ Or use a key file:
     textconv = diff-kdbx --textconv --key-file ~/keepass.key
 ```
 
-A key file alone may suffice for some KDBX databases. If the database also requires a password, the env var must be set in the same environment as `git`.
+For a vault with a key file and no password, the key file alone is the key in textconv mode (no password variable needed). `--no-password` states it explicitly and ignores a stray `KDBX_DIFF_PASSWORD`:
+
+```gitconfig
+[diff "kdbx"]
+    textconv = diff-kdbx --textconv --no-password --key-file ~/keepass.key
+```
+
+If the database requires a password as well, the env var must be set in the same environment as `git`.
 
 ## Caching
 
-`cachetextconv = true` lets git cache the text representation of a file by blob hash, so repeated `git log -p` calls don't re-decrypt every commit. This is safe because the textconv output is deterministic.
+`cachetextconv = true` lets git cache the text representation of a file by blob hash, so repeated `git log -p` calls don't re-decrypt every commit. This is safe because the textconv output is deterministic, and worth it: each dump unlocks the vault and derives a fingerprint key at the vault's own KDF cost.
 
 ## Caveats
 

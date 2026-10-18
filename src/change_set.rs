@@ -8,10 +8,10 @@ use uuid::Uuid;
 
 use crate::properties::{KdfKind, Property, Shown};
 
-/// The result of `compute`: what changed between two
+/// The result of [`compute`](crate::compute): what changed between two
 /// snapshots.
 ///
-/// The JSON form (see `render_json`) is a documented
+/// The JSON form (see [`render_json`](crate::render_json)) is a documented
 /// contract versioned by `format_version`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
@@ -118,7 +118,7 @@ pub struct Summary {
     /// Property changes of the database itself.
     pub database_properties: usize,
     /// Noise property changes left out (see
-    /// [`Property::is_noise`]); zero under `Noise::Show`.
+    /// [`Property::is_noise`]); zero under [`Noise::Show`](crate::Noise::Show).
     pub suppressed: usize,
 }
 
