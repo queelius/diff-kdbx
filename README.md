@@ -108,7 +108,7 @@ fresh clone on another machine needs the `git config` step again.
 diff-kdbx [OPTIONS] <A> <B>            # diff two files (exit 0 / 1 / 2)
 diff-kdbx [OPTIONS] --textconv <FILE>  # dump one file for git (never prompts)
 diff-kdbx [OPTIONS] --dump <FILE>      # the same dump, for reading
-diff-kdbx fingerprint --field <NAME> --entry <PATH-OR-UUID> [--key-file F] [--no-password] <VAULT>
+diff-kdbx fingerprint --field <NAME> --entry <PATH-OR-UUID> [--params P] [--salt UUID] [--key-file F] [--no-password] <VAULT>
 ```
 
 | Option | Meaning |
@@ -276,15 +276,35 @@ only as attackable as the vault itself. Consequences:
   fingerprinted). It warns when stdout is not a terminal and is refused with
   `--textconv`.
 
-To check a recorded fingerprint (for example from an mcp-kdbx audit log),
-print a field's full fingerprint with the vault's own key:
+In a two-file diff, **B's fingerprints are made with A's key** (A's key
+material and root UUID). If A's password was rotated because it leaked, the
+diff's fingerprints of B's secrets are only as safe as that leaked password
+(and the KDF cost): treat that output like the old vault.
+
+**Verifying a recorded fingerprint.** `diff-kdbx fingerprint` prints one
+field's full fingerprint. It opens the vault with your key, captures it with
+fingerprint sealing (so a secret's sealed value is printed as is; a plain
+field is fingerprinted with the same key), and derives the key from **that
+vault's key material**:
 
 ```bash
+# As the vault's own --textconv / --dump shows it (its own params and root UUID):
 diff-kdbx fingerprint --field Password --entry /Personal/Bank vault.kdbx
 diff-kdbx fingerprint --field otp --entry 00000012-d1ff-4000-8000-000000000000 vault.kdbx
+# As recorded elsewhere: params in DeriveParams' recorded form, salt a root UUID
+diff-kdbx fingerprint --field Password --entry /Personal/Bank \
+    --params 'argon2id$v=19$m=65536,t=3,p=1' --salt 00000001-d1ff-4000-8000-000000000000 b.kdbx
 ```
 
-Its first 8 characters match the `<sealed:...>` in that vault's dump.
+It can verify: the vault's own dump (first 8 characters match its
+`<sealed:...>`); a two-file diff's fingerprints of either side, given the
+JSON's `fingerprint_key.params` and `salt` and **side A's key material** (it
+uses the key you open the given vault with, so B's values verify directly
+only when A and B share a password and key file); and records that store
+the derivation parameters, such as mcp-kdbx audit logs (salt: the vault's
+root UUID unless recorded otherwise). It cannot verify attachments or
+custom-data values (only fields), or anything sealed with a random
+per-session key.
 
 ## Library
 

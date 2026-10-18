@@ -101,8 +101,11 @@ struct KeyArgs {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Print the keyed fingerprint of one entry field, as the diff and dump
-    /// of this vault show it (in full), to verify a recorded fingerprint.
+    /// Print the keyed fingerprint of one entry field (in full), to verify a
+    /// recorded fingerprint. The key is derived from this vault's key
+    /// material; by default with its own parameters and root UUID, as
+    /// --textconv and --dump do. --params and --salt reproduce a key
+    /// recorded elsewhere (a two-file diff's JSON, an mcp-kdbx audit log).
     Fingerprint {
         /// The field name (for example Password, or a custom field).
         #[arg(long, value_name = "NAME")]
@@ -110,6 +113,14 @@ enum Command {
         /// The entry: a vault path (/Group/Title) or a UUID.
         #[arg(long, value_name = "PATH-OR-UUID")]
         entry: String,
+        /// Derivation parameters, in their recorded form
+        /// argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes> (default: the vault's own).
+        #[arg(long, value_name = "PARAMS", value_parser = parse_params)]
+        params: Option<DeriveParams>,
+        /// Salt: the root group UUID of the vault whose key was recorded
+        /// (default: this vault's root group UUID).
+        #[arg(long, value_name = "UUID")]
+        salt: Option<Uuid>,
         #[command(flatten)]
         key: KeyArgs,
         /// The vault.
@@ -260,11 +271,13 @@ fn run() -> Result<u8> {
     if let Some(Command::Fingerprint {
         field,
         entry,
+        params,
+        salt,
         key,
         vault,
     }) = &cli.command
     {
-        return run_fingerprint(field, entry, key, vault);
+        return run_fingerprint(field, entry, *params, *salt, key, vault);
     }
     if let Some(path) = &cli.textconv {
         if cli.show_secrets {
@@ -407,9 +420,17 @@ fn run_diff(cli: &Cli, a_path: &Path, b_path: &Path) -> Result<u8> {
     Ok(if cs.is_empty() { 0 } else { 1 })
 }
 
-/// `fingerprint`: the full keyed fingerprint of one field, with the vault's
-/// own key (as `--textconv` derives it).
-fn run_fingerprint(field: &str, entry: &str, key: &KeyArgs, vault: &Path) -> Result<u8> {
+/// `fingerprint`: the full keyed fingerprint of one field. The vault is
+/// captured with fingerprint sealing, so a secret field's sealed value is the
+/// answer as is; a plain field is fingerprinted with the same key and domain.
+fn run_fingerprint(
+    field: &str,
+    entry: &str,
+    params: Option<DeriveParams>,
+    salt: Option<Uuid>,
+    key: &KeyArgs,
+    vault: &Path,
+) -> Result<u8> {
     let secret = Secret::resolve(
         key.key_file.as_deref(),
         key.no_password,
@@ -418,8 +439,10 @@ fn run_fingerprint(field: &str, entry: &str, key: &KeyArgs, vault: &Path) -> Res
         true,
     )?;
     let db = open(vault, &secret)?;
-    let fp_key = derive_key(&secret, db.root().id().uuid(), &params_of(&db))?;
-    let snap = capture(&db, &Sealing::Reveal(&fp_key));
+    let params = params.unwrap_or_else(|| params_of(&db));
+    let salt = salt.unwrap_or_else(|| db.root().id().uuid());
+    let fp_key = derive_key(&secret, salt, &params)?;
+    let snap = capture(&db, &Sealing::Fingerprint(&fp_key));
     let found = match Uuid::parse_str(entry) {
         Ok(uuid) => snap
             .find_entry(uuid)
@@ -433,12 +456,43 @@ fn run_fingerprint(field: &str, entry: &str, key: &KeyArgs, vault: &Path) -> Res
         .field(field)
         .ok_or_else(|| anyhow!("entry {entry:?} has no field {field:?}"))?
         .value;
-    let Value::Plain(plaintext) = value else {
-        bail!("field {field:?} was not captured in plaintext");
+    let fp = match value {
+        Value::Sealed(fp) => *fp,
+        Value::Plain(plaintext) => fp_key.fingerprint(Domain::Field, plaintext.as_bytes()),
+        _ => bail!("field {field:?} holds a value kind this version does not know"),
     };
-    let fp = fp_key.fingerprint(Domain::Field, plaintext.as_bytes());
     write_stdout(format!("{}\n", fp.to_hex()).as_bytes())?;
     Ok(0)
+}
+
+/// The recorded (`Display`) form of [`DeriveParams`]. kdbx-core prints it but
+/// has no parser, so the grammar is read here: exactly
+/// `argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes>`, and nothing below the floor
+/// (no fingerprint is ever derived with such parameters).
+fn parse_params(s: &str) -> std::result::Result<DeriveParams, String> {
+    const FORM: &str = "argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes>";
+    let malformed = || format!("expected {FORM}");
+    let rest = s.strip_prefix("argon2id$v=19$").ok_or_else(malformed)?;
+    let mut parts = rest.split(',');
+    let mut component = |name: &str| -> std::result::Result<u32, String> {
+        parts
+            .next()
+            .and_then(|p| p.strip_prefix(name))
+            .and_then(|n| n.parse().ok())
+            .ok_or_else(malformed)
+    };
+    let (m, t, p) = (component("m=")?, component("t=")?, component("p=")?);
+    if parts.next().is_some() {
+        return Err(malformed());
+    }
+    let params = DeriveParams::new(m, t, p);
+    if (params.memory_kib(), params.iterations(), params.lanes()) != (m, t, p) {
+        return Err(format!(
+            "below the floor {}: no fingerprint is derived with these parameters",
+            DeriveParams::FLOOR
+        ));
+    }
+    Ok(params)
 }
 
 #[cfg(test)]
@@ -450,5 +504,13 @@ mod tests {
         assert_eq!(guarded(|| Ok(1)), 1);
         assert_eq!(guarded(|| bail!("boom")), 2);
         assert_eq!(guarded(|| panic!("a bug")), 2);
+    }
+
+    #[test]
+    fn params_round_trip_through_their_recorded_form() {
+        for params in [DeriveParams::FLOOR, DeriveParams::new(32 * 1024, 8, 4)] {
+            assert_eq!(parse_params(&params.to_string()), Ok(params));
+        }
+        assert!(parse_params("argon2id$v=19$m=65536,t=3,p=1,x=1").is_err());
     }
 }

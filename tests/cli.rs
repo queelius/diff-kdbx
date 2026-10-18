@@ -28,7 +28,17 @@ fn bank_vault(dir: &Path, name: &str, key: DatabaseKey) -> PathBuf {
     bank_vault_with(dir, name, key, common::cheap_db(Uuid::from_u128(ROOT)))
 }
 
-fn bank_vault_with(dir: &Path, name: &str, key: DatabaseKey, mut db: keepass::Database) -> PathBuf {
+fn bank_vault_with(dir: &Path, name: &str, key: DatabaseKey, db: keepass::Database) -> PathBuf {
+    bank_vault_full(dir, name, key, db, "hunter2")
+}
+
+fn bank_vault_full(
+    dir: &Path,
+    name: &str,
+    key: DatabaseKey,
+    mut db: keepass::Database,
+    password: &str,
+) -> PathBuf {
     db.root_mut().name = "Root".into();
     {
         let mut root = db.root_mut();
@@ -36,7 +46,7 @@ fn bank_vault_with(dir: &Path, name: &str, key: DatabaseKey, mut db: keepass::Da
             .add_entry_with_id(EntryId::from_uuid(Uuid::from_u128(BANK)))
             .unwrap();
         bank.set_unprotected(fields::TITLE, "Bank");
-        bank.set_protected(fields::PASSWORD, "hunter2");
+        bank.set_protected(fields::PASSWORD, password);
         bank.times = common::fixed_times();
     }
     db.root_mut().times = common::fixed_times();
@@ -357,4 +367,120 @@ fn empty_password_variable_with_a_key_file_means_no_password() {
         .arg(&empty)
         .assert()
         .success();
+}
+
+/// Every `"sealed"` string in a JSON document, in document order.
+fn sealed_values(v: &serde_json::Value, out: &mut Vec<String>) {
+    match v {
+        serde_json::Value::Object(map) => {
+            for (k, child) in map {
+                match (k.as_str(), child) {
+                    ("sealed", serde_json::Value::String(s)) => out.push(s.clone()),
+                    _ => sealed_values(child, out),
+                }
+            }
+        }
+        serde_json::Value::Array(items) => items.iter().for_each(|i| sealed_values(i, out)),
+        _ => {}
+    }
+}
+
+/// A two-file diff seals B's values with A's key: its params and salt are
+/// recorded in the JSON, and `fingerprint --params --salt` reproduces them.
+#[test]
+fn fingerprint_subcommand_verifies_a_two_file_diff() {
+    let tmp = TempDir::new().unwrap();
+    let a = bank_vault(tmp.path(), "a.kdbx", DatabaseKey::new().with_password("pw"));
+    let other_root = common::cheap_db(Uuid::from_u128(ROOT + 1));
+    let b = bank_vault_full(
+        tmp.path(),
+        "b.kdbx",
+        DatabaseKey::new().with_password("pw"),
+        other_root,
+        "rotated",
+    );
+    let out = cmd()
+        .env("KDBX_DIFF_PASSWORD", "pw")
+        .arg("--format=json")
+        .args([&a, &b])
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let mut sealed = Vec::new();
+    sealed_values(&v["changes"], &mut sealed);
+    assert_eq!(sealed.len(), 2, "A's and B's sealed passwords: {v}");
+    let p = &v["fingerprint_key"]["params"];
+    let params = format!(
+        "argon2id$v=19$m={},t={},p={}",
+        p["memory_kib"], p["iterations"], p["lanes"]
+    );
+    let salt = v["fingerprint_key"]["salt"].as_str().unwrap().to_owned();
+    let verify = |extra: &[&str]| {
+        stdout(
+            cmd()
+                .env("KDBX_DIFF_PASSWORD", "pw")
+                .args(["fingerprint", "--field", "Password", "--entry", "/Bank"])
+                .args(extra)
+                .arg(&b),
+        )
+        .trim_end()
+        .to_owned()
+    };
+    // B's password, under A's recorded key.
+    let b_value = verify(&["--params", &params, "--salt", &salt]);
+    assert!(sealed.contains(&b_value), "{b_value} not in {sealed:?}");
+    // B's own salt (its root UUID) gives a different key.
+    assert!(!sealed.contains(&verify(&["--params", &params])));
+}
+
+#[test]
+fn fingerprint_subcommand_rejects_bad_params() {
+    let tmp = TempDir::new().unwrap();
+    let vault = bank_vault(tmp.path(), "v.kdbx", DatabaseKey::new().with_password("pw"));
+    for (params, message) in [
+        ("argon2id$v=19$m=1024,t=1,p=1", "below the floor"),
+        ("argon2id$v=19$m=65536,t=3,p=0", "below the floor"),
+        (
+            "argon2d$v=19$m=65536,t=3,p=1",
+            "argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes>",
+        ),
+        (
+            "argon2id$v=19$m=65536,t=3",
+            "argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes>",
+        ),
+        (
+            "argon2id$v=19$m=x,t=3,p=1",
+            "argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes>",
+        ),
+    ] {
+        cmd()
+            .env("KDBX_DIFF_PASSWORD", "pw")
+            .args([
+                "fingerprint",
+                "--field",
+                "Password",
+                "--entry",
+                "/Bank",
+                "--params",
+                params,
+            ])
+            .arg(&vault)
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains(message));
+    }
+    cmd()
+        .env("KDBX_DIFF_PASSWORD", "pw")
+        .args([
+            "fingerprint",
+            "--field",
+            "Password",
+            "--entry",
+            "/Bank",
+            "--salt",
+            "nope",
+        ])
+        .arg(&vault)
+        .assert()
+        .code(2);
 }
