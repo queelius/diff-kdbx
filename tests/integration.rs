@@ -52,9 +52,26 @@ fn password_change_seals_by_default() {
         .stdout(predicate::str::contains("old-password").not());
 }
 
-/// --show-secrets reveals the plaintext value of protected fields in the dump.
+/// --show-secrets reveals the plaintext value of protected fields in the
+/// manual dump.
 #[test]
 fn show_secrets_reveals_plaintext() {
+    diff_cmd()
+        .args([
+            "--show-secrets",
+            "--dump",
+            "tests/fixtures/password_change/before.kdbx",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("old-password"));
+}
+
+/// git stores textconv output (its textconv cache is a notes ref that mirror
+/// pushes and bundles carry), so --show-secrets with --textconv is refused
+/// before anything is opened or written.
+#[test]
+fn show_secrets_with_textconv_is_refused() {
     diff_cmd()
         .args([
             "--show-secrets",
@@ -62,8 +79,11 @@ fn show_secrets_reveals_plaintext() {
             "tests/fixtures/password_change/before.kdbx",
         ])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("old-password"));
+        .code(2)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "--show-secrets cannot be used with --textconv",
+        ));
 }
 
 #[test]

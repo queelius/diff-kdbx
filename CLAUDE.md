@@ -62,6 +62,9 @@ examples/gen_fixtures.rs  # regenerates tests/fixtures (keepass save_kdbx4)
 - Output is deterministic (sorted maps, explicit ordering); the textconv
   stdout is all-or-nothing.
 - Exit codes mirror `/usr/bin/diff`: 0 no changes, 1 changes, 2 error.
+- Textconv output is storable (git's textconv cache is a notes ref that
+  mirrors and bundles carry): `--textconv` never reveals secrets, and the
+  docs keep `cachetextconv` opt-in.
 - The JSON shape is versioned (`JSON_FORMAT_VERSION`); the insta snapshots in
   `tests/snapshots/` pin it. Changing a snapshot is changing the contract.
 

@@ -75,7 +75,8 @@ struct Cli {
     #[arg(long)]
     strict: bool,
 
-    /// Show plaintext for protected fields. Off by default.
+    /// Show plaintext for protected fields. Off by default; refused with
+    /// --textconv, whose output git may store.
     #[arg(long)]
     show_secrets: bool,
 
@@ -247,6 +248,14 @@ fn run() -> Result<u8> {
         return run_fingerprint(field, entry, key, vault);
     }
     if let Some(path) = &cli.textconv {
+        if cli.show_secrets {
+            bail!(
+                "--show-secrets cannot be used with --textconv: git may store textconv \
+                 output (diff.<driver>.cachetextconv keeps it under refs/notes/textconv/, \
+                 which mirror pushes, mirror clones and bundles carry), so secrets would \
+                 end up in the repository; use --dump to read them locally"
+            );
+        }
         // Never interactive: git runs the driver without a terminal.
         run_dump(&cli, path, false)
     } else if let Some(path) = &cli.dump_path {

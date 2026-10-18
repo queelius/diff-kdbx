@@ -65,7 +65,6 @@ Once per machine:
 ```bash
 git config --global diff.kdbx.textconv 'diff-kdbx --textconv'
 git config --global diff.kdbx.binary true
-git config --global diff.kdbx.cachetextconv true
 ```
 
 Once per repository:
@@ -78,9 +77,27 @@ git add .gitattributes && git commit -m 'diff kdbx files with diff-kdbx'
 Then `git diff vault.kdbx`, `git log -p vault.kdbx` and `git show HEAD
 vault.kdbx` show the textconv dumps' line diff. The driver never prompts: set
 `KDBX_DIFF_PASSWORD` (and/or put `--key-file` in the textconv command) in the
-shell that runs git. `cachetextconv` is safe because the dump is
-deterministic, and it matters: each dump derives a fingerprint key with the
-vault's own KDF cost (see below). More recipes: `examples/git-config.md`.
+shell that runs git. More recipes: `examples/git-config.md`.
+
+### Caching textconv output (opt-in, read this first)
+
+Each dump unlocks the vault and derives a fingerprint key at the vault's own
+KDF cost, so `git log -p` over a long history is slow. git can cache textconv
+output (`git config diff.kdbx.cachetextconv true`), and the dump is
+deterministic, so the cache is correct. It is **not** private:
+
+git stores cached textconv output as ordinary blobs under
+`refs/notes/textconv/kdbx`. Those notes are not pushed by a plain `git push`,
+but a mirror push (`git push --mirror`), a mirror clone of that remote, and
+`git bundle create ... --all` do carry them. The dump holds everything that is
+not a secret in plaintext: titles, user names, URLs, Notes, tags, unprotected
+custom fields, attachment names. A repository whose `.kdbx` blobs are safe to
+publish therefore stops being safe once its textconv cache travels with it.
+
+Turn caching on only for repositories that never leave your machines in
+mirror or bundle form, or remove the cache before mirroring
+(`git update-ref -d refs/notes/textconv/kdbx`). `--show-secrets` is refused
+together with `--textconv` for the same reason.
 
 The driver definition lives in your git config, not in the repository, so a
 fresh clone on another machine needs the `git config` step again.
@@ -250,9 +267,11 @@ only as attackable as the vault itself. Consequences:
 - Equal fingerprints within one vault reveal equal values (password reuse).
   That is useful for audits and a side channel worth knowing.
 - Deriving the key costs about as much as unlocking the vault, once per file
-  per run. Turn on `cachetextconv`.
+  per run (see "Caching textconv output" for the opt-in cache and its
+  exposure).
 - `--show-secrets` captures plaintext instead (attachments stay
-  fingerprinted). It warns when stdout is not a terminal.
+  fingerprinted). It warns when stdout is not a terminal and is refused with
+  `--textconv`.
 
 To check a recorded fingerprint (for example from an mcp-kdbx audit log),
 print a field's full fingerprint with the vault's own key:
@@ -307,7 +326,14 @@ control of a vault:
 
 ## Security notes
 
-- The `.kdbx` stays encrypted in git; a remote sees only ciphertext.
+- The `.kdbx` stays encrypted in git; a remote sees only ciphertext, unless
+  textconv output travels with it (see "Caching textconv output").
+- **Only secrets are sealed.** A dump or diff shows every other value in
+  plaintext: titles, user names, URLs, tags, attachment names, unprotected
+  custom fields and, notably, **Notes**, which many people treat as private.
+  KeePass does not protect Notes by default. Mark a field protected (or keep
+  sensitive notes in a protected custom field) if its content must not appear
+  in diffs, terminals, logs or caches.
 - `KDBX_DIFF_PASSWORD` lives in your environment and can leak through shell
   history, `/proc/<pid>/environ`, or child processes. Treat it like any
   password variable.
@@ -325,8 +351,9 @@ control of a vault:
 - **"Error: unlocking ..."**: wrong password or key file. Test with
   `diff-kdbx --dump vault.kdbx`. For a vault without a password, pass
   `--key-file` (and `--no-password` to be explicit).
-- **Slow `git log -p`**: every dump derives a fingerprint key at the vault's
-  KDF cost. Enable `cachetextconv`.
+- **Slow `git log -p`**: every dump unlocks the vault and derives a
+  fingerprint key at the vault's KDF cost. `cachetextconv` helps, with the
+  exposure described under "Caching textconv output".
 
 ## Where to go next
 

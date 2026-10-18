@@ -8,8 +8,9 @@ Add to `~/.gitconfig`:
 [diff "kdbx"]
     textconv = diff-kdbx --textconv
     binary = true
-    cachetextconv = true
 ```
+
+Caching is deliberately absent: see "Caching" below before turning it on.
 
 ## Per-repo override
 
@@ -56,7 +57,29 @@ If the database requires a password as well, the env var must be set in the same
 
 ## Caching
 
-`cachetextconv = true` lets git cache the text representation of a file by blob hash, so repeated `git log -p` calls don't re-decrypt every commit. This is safe because the textconv output is deterministic, and worth it: each dump unlocks the vault and derives a fingerprint key at the vault's own KDF cost.
+`cachetextconv = true` lets git cache the text representation of a file by blob hash, so repeated `git log -p` calls don't re-decrypt every commit (each dump unlocks the vault and derives a fingerprint key at the vault's own KDF cost). The cache is correct, because the dump is deterministic, but it is **opt-in for a reason**:
+
+git stores cached textconv output as ordinary blobs under
+`refs/notes/textconv/kdbx`. Those notes are not pushed by a plain `git push`,
+but a mirror push (`git push --mirror`), a mirror clone of that remote, and
+`git bundle create ... --all` do carry them. The dump holds everything that is
+not a secret in plaintext: titles, user names, URLs, Notes, tags, unprotected
+custom fields, attachment names. A repository whose `.kdbx` blobs are safe to
+publish therefore stops being safe once its textconv cache travels with it.
+
+Enable it per repository only where that is acceptable:
+
+```bash
+git config diff.kdbx.cachetextconv true
+```
+
+and drop the cache before any mirror push or bundle:
+
+```bash
+git update-ref -d refs/notes/textconv/kdbx
+```
+
+`diff-kdbx` refuses `--show-secrets` together with `--textconv`, so a cache can never hold protected values.
 
 ## Caveats
 

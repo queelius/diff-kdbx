@@ -54,6 +54,9 @@ line replaces them.
 ### CLI
 - Opens files with keepass 0.15 (KDBX 3.1, 4.0, 4.1) and captures them with
   fingerprint sealing; `--show-secrets` captures plaintext instead.
+  `--show-secrets` is refused together with `--textconv`: git may store
+  textconv output (its textconv cache notes travel with mirror pushes and
+  bundles). Caching textconv output is documented as opt-in for that reason.
 - Fingerprint keys are derived with Argon2id from the vault's key material,
   never cheaper than the vault's own KDF: per file for `--textconv` and
   `--dump`, once from side A for a two-file diff, with the costlier of both
