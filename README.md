@@ -136,14 +136,15 @@ would be ambiguous.
 ## Output
 
 **Text diff.** A summary line, `warning:` lines, then one record per changed
-node: `+`/`-`/`~`, `GROUP` or `ENTRY`, and the node's vault path (the
-ecosystem path grammar: no root-group name, `\/` escapes, `:2` for
-same-named siblings ordered by UUID, trailing `/` for groups). A move is part
-of the record (`(moved from /Work/VPN)`), so a moved-and-edited entry is one
-record. Each changed property is one line: `+ label: value`, `- label:
-value`, `~ label: before -> after`. Multi-line values (Notes) print as `| `
-continuation lines, so they still diff line by line and can never forge a
-structural line.
+node: `+`/`-`/`~`, `GROUP` or `ENTRY`, and the node's vault path as a quoted
+token (the ecosystem path grammar inside: no root-group name, `\/` escapes,
+`:2` for same-named siblings ordered by UUID, trailing `/` for groups). A move
+is part of the record (`~ ENTRY "/Personal/VPN" (moved from "/Work/VPN")`), so
+a moved-and-edited entry is one record. Each changed property is one line:
+`+ label: value`, `- label: value`, `~ label: before -> after`. Multi-line
+values (Notes) print as `|` continuation lines, so they can never forge a
+structural line; a modified multi-line value prints both full sides (`- |`
+lines, then `+ |` lines), not a line-by-line diff of them.
 
 **Dump** (`--textconv`, `--dump`). A `DATABASE` block, then `GROUP <path>
 [uuid:...]` and `ENTRY <path> [uuid:...]` blocks in tree order, each listing
@@ -358,7 +359,9 @@ per-session key.
 use diff_kdbx::kdbx_core::capture::keepass_0_15::{capture, header};
 use diff_kdbx::kdbx_core::fingerprint::{DeriveParams, FingerprintKey, KeyMaterial};
 use diff_kdbx::kdbx_core::model::Sealing;
-use diff_kdbx::{DiffOptions, JsonOptions, compute, dump, render_json, render_text};
+use diff_kdbx::{
+    DiffOptions, JsonOptions, TextOptions, compute, dump, render_json, render_text,
+};
 
 // Open with keepass 0.15 (kdbx-core feature "keepass-0_15"), then:
 let params = DeriveParams::for_header(Some(&header(&db_a)));
@@ -368,7 +371,7 @@ let a = capture(&db_a, &Sealing::Fingerprint(&key));
 let b = capture(&db_b, &Sealing::Fingerprint(&key));
 
 let cs = compute(&a, &b, &DiffOptions::default());
-print!("{}", render_text(&cs));
+print!("{}", render_text(&cs, &TextOptions::default()));
 print!("{}", render_json(&cs, &JsonOptions::default()));
 print!("{}", dump(&a, &Default::default()));
 ```

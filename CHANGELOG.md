@@ -19,7 +19,8 @@ line replaces them.
 
 ### Library
 - `compute(&Snapshot, &Snapshot, &DiffOptions) -> ChangeSet`,
-  `dump(&Snapshot, &DumpOptions) -> String`, `render_text(&ChangeSet)` and
+  `dump(&Snapshot, &DumpOptions) -> String`,
+  `render_text(&ChangeSet, &TextOptions)` and
   `render_json(&ChangeSet, &JsonOptions)`, all re-exported at the crate root
   along with `kdbx_core` itself. Engine internals are private and every public
   type that may grow is `#[non_exhaustive]`.
@@ -33,8 +34,6 @@ line replaces them.
 - One record per changed node: a move is `moved_from` on the record, so a
   moved-and-edited entry or a moved-and-renamed group is one record and
   counts once. Every `Summary` counter is computed from the records.
-- History items are keyed by modification time, so trimming at the history
-  cap and editing at the cap are precise additions and removals.
 - Secrets arrive sealed (keyed fingerprints from kdbx-core); the diff shows
   `<sealed:xxxxxxxx>` and marks protection where it is not implied, so turning
   protection off is visible even when the value is unchanged. The Title is
@@ -51,14 +50,21 @@ line replaces them.
   bare, and every vault-controlled string beside renderer syntax (custom
   field names, tags and other keys, plain values, paths) is one quoted token,
   so no vault content can forge a line, a label, a sealed value or a ` -> `.
-- History items are matched by modification time, then by content, then by
-  position, so trimming at the history cap is one removal and one addition.
+- History items are compared by modification time: an item whose time
+  exists on one side only is an addition or a removal, so trimming at the
+  history cap and pushing a new item are one removal and one addition. Items
+  sharing a time pair by equal content first (reporting nothing, so a
+  reordering is no change), then by position; a leftover is an addition or a
+  removal. Labels number an item among those sharing its time in its own
+  snapshot (`History[<time>#2]`), so they match that snapshot's dump.
 - The JSON document is a versioned contract defined by diff-kdbx itself
   (`format_version: 1`, flat leaves, no other crate's serde output), with the
   fingerprint key's derivation parameters and salt recorded. `render_json` is
   the only JSON entry point; public types do not implement `Serialize`.
 - Every enum variant with named fields is `#[non_exhaustive]` with a
-  constructor; `render_text` takes `&TextOptions`.
+  constructor.
+- `docs/FORMAT.md` documents the dump and text diff grammar, checked against
+  real output by a test.
 
 ### CLI
 - Opens files with keepass 0.15 (KDBX 3.1, 4.0, 4.1) and captures them with

@@ -79,7 +79,7 @@ and drop the cache before any mirror push or bundle:
 git update-ref -d refs/notes/textconv/kdbx
 ```
 
-`diff-kdbx` refuses `--show-secrets` together with `--textconv`, so a cache can never hold protected values.
+`diff-kdbx` refuses `--show-secrets` together with `--textconv`, so the usual textconv command cannot put protected values in the cache. Do not work around that: a textconv command such as `diff-kdbx --show-secrets --dump` would run, and git would cache (and a mirror would carry) every plaintext secret. Never use `--show-secrets` in a git configuration.
 
 ## Caveats
 
