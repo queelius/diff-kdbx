@@ -485,7 +485,7 @@ fn kdf_downgrade_warns() {
     // Both vaults cost less than the floor, so the key derives at the floor.
     assert_eq!(
         v["fingerprint_key"]["params"],
-        serde_json::json!({"memory_kib": 65536, "iterations": 3, "lanes": 1})
+        "argon2id$v=19$m=65536,t=3,p=1"
     );
 }
 

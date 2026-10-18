@@ -104,7 +104,7 @@ mod tests {
         assert_eq!(
             v["fingerprint_key"],
             json!({
-                "params": {"memory_kib": 65536, "iterations": 3, "lanes": 1},
+                "params": "argon2id$v=19$m=65536,t=3,p=1",
                 "salt": "00000000-0000-0000-0000-000000000001"
             })
         );

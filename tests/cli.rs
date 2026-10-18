@@ -257,7 +257,7 @@ fn json_records_how_the_fingerprint_key_was_derived() {
     assert_eq!(
         v["fingerprint_key"],
         serde_json::json!({
-            "params": {"memory_kib": 65536, "iterations": 3, "lanes": 1},
+            "params": "argon2id$v=19$m=65536,t=3,p=1",
             "salt": Uuid::from_u128(ROOT).to_string()
         })
     );
@@ -311,7 +311,7 @@ fn two_file_key_uses_the_stronger_vaults_parameters() {
         let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
         assert_eq!(
             v["fingerprint_key"]["params"],
-            serde_json::json!({"memory_kib": 32768, "iterations": 8, "lanes": 1})
+            "argon2id$v=19$m=32768,t=8,p=1"
         );
     }
 }
@@ -409,11 +409,8 @@ fn fingerprint_subcommand_verifies_a_two_file_diff() {
     let mut sealed = Vec::new();
     sealed_values(&v["changes"], &mut sealed);
     assert_eq!(sealed.len(), 2, "A's and B's sealed passwords: {v}");
-    let p = &v["fingerprint_key"]["params"];
-    let params = format!(
-        "argon2id$v=19$m={},t={},p={}",
-        p["memory_kib"], p["iterations"], p["lanes"]
-    );
+    // The recorded parameters are exactly what --params accepts.
+    let params = v["fingerprint_key"]["params"].as_str().unwrap().to_owned();
     let salt = v["fingerprint_key"]["salt"].as_str().unwrap().to_owned();
     let verify = |extra: &[&str]| {
         stdout(

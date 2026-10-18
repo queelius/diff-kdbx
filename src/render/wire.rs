@@ -14,6 +14,7 @@
 //! | fingerprint | 64 lowercase hex characters |
 //! | color | `"#RRGGBB"` |
 //! | format version | `"major.minor"` |
+//! | key derivation parameters | `"argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes>"` |
 //! | enum names | `snake_case` strings spelled below |
 
 use chrono::DateTime;
@@ -44,15 +45,10 @@ pub(super) struct Document {
 
 #[derive(Serialize)]
 struct KeyInfo {
-    params: Params,
+    /// `DeriveParams`' recorded form, `argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes>`:
+    /// exactly what `diff-kdbx fingerprint --params` accepts.
+    params: String,
     salt: String,
-}
-
-#[derive(Serialize)]
-struct Params {
-    memory_kib: u32,
-    iterations: u32,
-    lanes: u32,
 }
 
 #[derive(Serialize)]
@@ -287,11 +283,7 @@ impl Document {
         Document {
             format_version: JSON_FORMAT_VERSION,
             fingerprint_key: key.map(|k| KeyInfo {
-                params: Params {
-                    memory_kib: k.params.memory_kib(),
-                    iterations: k.params.iterations(),
-                    lanes: k.params.lanes(),
-                },
+                params: k.params.to_string(),
                 salt: uuid(k.salt),
             }),
             changes: cs.changes.iter().map(change).collect(),

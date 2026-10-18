@@ -306,7 +306,7 @@ fn document_envelope() {
         json!({
             "format_version": 1,
             "fingerprint_key": {
-                "params": {"memory_kib": 32768, "iterations": 8, "lanes": 2},
+                "params": "argon2id$v=19$m=32768,t=8,p=2",
                 "salt": "00000000-0000-0000-0000-000000000001"
             },
             "changes": [],

@@ -215,7 +215,7 @@ shape diff-kdbx defines itself, leaf by leaf:
 {
   "format_version": 1,
   "fingerprint_key": {
-    "params": {"memory_kib": 65536, "iterations": 3, "lanes": 1},
+    "params": "argon2id$v=19$m=65536,t=3,p=1",
     "salt": "00000001-d1ff-4000-8000-000000000000"
   },
   "changes": [
@@ -276,10 +276,11 @@ shape diff-kdbx defines itself, leaf by leaf:
   `{"kind": "kdf_weakened", "aspect": "no_longer_memory_hard", "before":
   "<kdf>", "after": "<kdf>"}`, `{"kind": "kdf_weakened", "aspect":
   "unrecognized", "before": "<kdf>"}`.
-- `fingerprint_key` records how the fingerprint key was derived (Argon2id
-  parameters and salt), so anyone holding the vault can reproduce every
-  fingerprint (see `diff-kdbx fingerprint --params --salt`); it is `null`
-  when the key was not derived from a vault.
+- `fingerprint_key` records how the fingerprint key was derived: `params` in
+  its recorded form `argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes>` (exactly
+  what `diff-kdbx fingerprint --params` accepts) and `salt` (a root-group
+  UUID), so anyone holding the vault can reproduce every fingerprint; it is
+  `null` when the key was not derived from a vault.
 - Breaking any of this bumps `format_version`. Snapshot tests pin the shape
   for every fixture pair.
 
