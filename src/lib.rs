@@ -11,14 +11,21 @@
 pub use kdbx_core;
 
 mod change_set;
-// The property maps are wired into compute and dump in the next tasks.
+mod compute;
+mod nodes;
+mod options;
+// The text renderers wire in the rest of the property helpers.
 #[allow(dead_code)]
 mod properties;
+#[cfg(test)]
+mod test_support;
 
 pub use change_set::{
     Change, ChangeSet, DiffWarning, KdfWeakening, NodeChange, NodeStatus, PropertyChange, Summary,
 };
 
+pub use compute::compute;
+pub use options::{DiffOptions, DumpOptions, Noise, RecycleBin};
 pub use properties::{
     AutoTypeKey, ColorRole, FieldName, GroupFlag, HeaderKey, HistoryKey, KdfKind, MetaKey,
     Property, Shown, TimeField,
