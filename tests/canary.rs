@@ -1,8 +1,11 @@
 //! No fixture secret reaches any output. For every fixture pair, the
 //! secrets are read from the vaults themselves (every field value that
 //! `kdbx_core::visibility::is_secret` calls a secret, in entries and their
-//! history, plus every attachment's content), with noise and the recycle bin
-//! shown:
+//! history, every custom-data value of the database, groups, entries and
+//! history items, and every attachment's content), with noise and the
+//! recycle bin shown. Each secret is searched for verbatim, in its
+//! `escape_inline` form, and as the body of its `quote` token, so a rendering
+//! that escaped a secret instead of sealing it is caught too:
 //!
 //! - a vault's dump contains none of that vault's secrets, and
 //! - the text diff and the JSON contain no secret of either side, except a
@@ -14,7 +17,10 @@ mod common;
 use std::collections::BTreeSet;
 
 use diff_kdbx::kdbx_core::capture::keepass_0_15::capture;
-use diff_kdbx::kdbx_core::model::{Entry, Sealing, Value};
+use std::collections::BTreeMap;
+
+use diff_kdbx::kdbx_core::model::{CustomValue, Entry, Sealing, Value};
+use diff_kdbx::kdbx_core::text::{escape_inline, quote};
 use diff_kdbx::kdbx_core::visibility::is_secret;
 use diff_kdbx::{
     DiffOptions, DumpOptions, JsonOptions, Noise, RecycleBin, TextOptions, compute, dump,
@@ -37,7 +43,20 @@ fn secrets(db: &keepass::Database) -> (BTreeSet<String>, BTreeSet<String>) {
     let key = common::test_key();
     let snap = capture(db, &Sealing::Reveal(&key));
     let (mut out, mut visible) = (BTreeSet::new(), BTreeSet::new());
-    let mut add_fields = |e: &Entry| {
+    // Custom-data values are sealed under fingerprint sealing, whatever
+    // their flags.
+    let custom = |items: &BTreeMap<String, CustomValue>, out: &mut BTreeSet<String>| {
+        for item in items.values() {
+            if let Value::Plain(s) = &item.value {
+                out.insert(s.clone());
+            }
+        }
+    };
+    custom(&snap.meta.custom_data, &mut out);
+    for g in snap.groups() {
+        custom(&g.custom_data, &mut out);
+    }
+    let mut add_entry = |e: &Entry| {
         for (name, field) in &e.fields {
             if let Value::Plain(s) = &field.value {
                 if is_secret(name, field.protected) {
@@ -47,10 +66,11 @@ fn secrets(db: &keepass::Database) -> (BTreeSet<String>, BTreeSet<String>) {
                 }
             }
         }
+        custom(&e.custom_data, &mut out);
     };
     for e in snap.entries() {
-        add_fields(e);
-        e.history.iter().for_each(&mut add_fields);
+        add_entry(e);
+        e.history.iter().for_each(&mut add_entry);
     }
     for e in db.iter_all_entries() {
         for (_, att) in e.attachments_named() {
@@ -64,12 +84,14 @@ fn secrets(db: &keepass::Database) -> (BTreeSet<String>, BTreeSet<String>) {
 #[test]
 fn no_fixture_secret_appears_in_any_output() {
     let mut checked = 0;
+    let mut all = BTreeSet::new();
     for name in common::pairs() {
         let (a, b) = (
             open_db(&format!("{name}/before.kdbx")),
             open_db(&format!("{name}/after.kdbx")),
         );
         let ((secret_a, visible_a), (secret_b, visible_b)) = (secrets(&a), secrets(&b));
+        all.extend(secret_a.iter().chain(&secret_b).cloned());
         let key = common::test_key();
         let seal = Sealing::Fingerprint(&key);
         let (sa, sb) = (capture(&a, &seal), capture(&b, &seal));
@@ -78,10 +100,18 @@ fn no_fixture_secret_appears_in_any_output() {
         let cs = compute(&sa, &sb, &diff);
         let mut check = |secrets: &BTreeSet<String>, out: &str| {
             for secret in secrets {
-                assert!(
-                    !out.contains(secret.as_str()),
-                    "{name}: {secret:?} leaked:\n{out}"
-                );
+                let quoted = quote(secret);
+                let forms = [
+                    secret.as_str(),
+                    &escape_inline(secret),
+                    &quoted[1..quoted.len() - 1],
+                ];
+                for form in forms {
+                    assert!(
+                        !out.contains(form),
+                        "{name}: {secret:?} leaked as {form:?}:\n{out}"
+                    );
+                }
                 checked += 1;
             }
         };
@@ -103,4 +133,15 @@ fn no_fixture_secret_appears_in_any_output() {
         check(&hidden, &render_json(&cs, &JsonOptions::default()));
     }
     assert!(checked >= 200, "only {checked} checks");
+    // The format_tour pair supplies a secret that needs every escape and a
+    // sealed custom-data value; the canary must see both.
+    assert!(
+        all.iter()
+            .any(|s| s.contains('"') && s.contains('\\') && s.contains('\n') && !s.is_ascii()),
+        "no tricky secret among {all:?}"
+    );
+    assert!(
+        all.contains("browser-secret-value-1"),
+        "no custom data among {all:?}"
+    );
 }

@@ -1,0 +1,506 @@
+---
+source: tests/snapshots.rs
+expression: "render_json(&cs, &JsonOptions::default())"
+---
+{
+  "format_version": 1,
+  "fingerprint_key": null,
+  "changes": [
+    {
+      "scope": "entry",
+      "uuid": "00000021-d1ff-4000-8000-000000000000",
+      "path": "/Tour/Card",
+      "status": "modified",
+      "moved_from": null,
+      "changes": [
+        {
+          "property": {
+            "kind": "field",
+            "key": "Password"
+          },
+          "before": {
+            "type": "field",
+            "protected": true,
+            "sealed": "8d7ca10150b80be17f49786e2c7aab38fa9b64c7141f32479ab692c0bc826daf"
+          },
+          "after": {
+            "type": "field",
+            "protected": false,
+            "sealed": "8d7ca10150b80be17f49786e2c7aab38fa9b64c7141f32479ab692c0bc826daf"
+          }
+        },
+        {
+          "property": {
+            "kind": "field",
+            "key": "Notes"
+          },
+          "before": {
+            "type": "field",
+            "protected": false,
+            "text": "line one\n\nline three"
+          },
+          "after": {
+            "type": "field",
+            "protected": false,
+            "text": "line one\n\nline 3"
+          }
+        },
+        {
+          "property": {
+            "kind": "tag",
+            "key": "a]b"
+          },
+          "before": null,
+          "after": {
+            "type": "present"
+          }
+        },
+        {
+          "property": {
+            "kind": "tag",
+            "key": "work"
+          },
+          "before": {
+            "type": "present"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "attachment",
+            "key": "backup.key"
+          },
+          "before": null,
+          "after": {
+            "type": "attachment",
+            "size": 19,
+            "sealed": "971cab75b53ff86f81a0ae317ab1ebc49a1b81e0d419f826cdca569a48e3c3e2",
+            "protected": true
+          }
+        },
+        {
+          "property": {
+            "kind": "icon"
+          },
+          "before": {
+            "type": "icon",
+            "standard": 0
+          },
+          "after": {
+            "type": "icon",
+            "standard": 12
+          }
+        },
+        {
+          "property": {
+            "kind": "auto_type_association",
+            "window": "Bank*",
+            "occurrence": 1
+          },
+          "before": {
+            "type": "text",
+            "text": "{USERNAME}"
+          },
+          "after": {
+            "type": "text",
+            "text": "{USERNAME}{ENTER}"
+          }
+        },
+        {
+          "property": {
+            "kind": "custom_data",
+            "key": "KPXC_BROWSER"
+          },
+          "before": {
+            "type": "sealed",
+            "sealed": "d4135488f183ea18f52e42879b2d0d0d032f60a965e8f5be2ac3541f48ed8183"
+          },
+          "after": {
+            "type": "sealed",
+            "sealed": "2e7eb066a3d7d1d34d17161073ea40c526bd64228e9a75ada3978e4e8db7c465"
+          }
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "Title"
+            }
+          },
+          "before": {
+            "type": "field",
+            "protected": false,
+            "text": "Card"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "UserName"
+            }
+          },
+          "before": {
+            "type": "field",
+            "protected": false,
+            "text": "alice"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "Password"
+            }
+          },
+          "before": {
+            "type": "field",
+            "protected": true,
+            "sealed": "8d7ca10150b80be17f49786e2c7aab38fa9b64c7141f32479ab692c0bc826daf"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "URL"
+            }
+          },
+          "before": {
+            "type": "field",
+            "protected": false,
+            "text": "https://card.example/untimed"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "Notes"
+            }
+          },
+          "before": {
+            "type": "field",
+            "protected": false,
+            "text": "line one\n\nline three"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "PIN"
+            }
+          },
+          "before": {
+            "type": "field",
+            "protected": true,
+            "sealed": "7bd6a759a81ec7d66a923a477b866fef829c95e8083d41fe2b54f1c53f8ad3e5"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "Tag[x]"
+            }
+          },
+          "before": {
+            "type": "field",
+            "protected": false,
+            "text": "a -> b"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "tag",
+              "key": "work"
+            }
+          },
+          "before": {
+            "type": "present"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "attachment",
+              "key": "key.pem"
+            }
+          },
+          "before": {
+            "type": "attachment",
+            "size": 40,
+            "sealed": "9fe344a1950c5c60f6890f7a8f7c599fc978d0fd32110e2bf89cf5afd6cabec3",
+            "protected": true
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "quality_check"
+            }
+          },
+          "before": {
+            "type": "bool",
+            "value": true
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "icon"
+            }
+          },
+          "before": {
+            "type": "icon",
+            "standard": 0
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "auto_type",
+              "key": "Enabled"
+            }
+          },
+          "before": {
+            "type": "bool",
+            "value": true
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "auto_type",
+              "key": "DefaultSequence"
+            }
+          },
+          "before": {
+            "type": "text",
+            "text": "{USERNAME}{TAB}{PASSWORD}{ENTER}"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "auto_type",
+              "key": "DataTransferObfuscation"
+            }
+          },
+          "before": {
+            "type": "obfuscation",
+            "value": "none"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "auto_type_association",
+              "window": "Bank*",
+              "occurrence": 0
+            }
+          },
+          "before": {
+            "type": "text",
+            "text": "{PASSWORD}"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "auto_type_association",
+              "window": "Bank*",
+              "occurrence": 1
+            }
+          },
+          "before": {
+            "type": "text",
+            "text": "{USERNAME}"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "time",
+              "key": "CreationTime"
+            }
+          },
+          "before": {
+            "type": "time",
+            "value": "2026-01-01T09:00:00Z"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "time",
+              "key": "Expires"
+            }
+          },
+          "before": {
+            "type": "bool",
+            "value": false
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": null,
+            "index": 0,
+            "property": {
+              "kind": "custom_data",
+              "key": "KPXC_BROWSER"
+            }
+          },
+          "before": {
+            "type": "sealed",
+            "sealed": "d4135488f183ea18f52e42879b2d0d0d032f60a965e8f5be2ac3541f48ed8183"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": "2026-01-02T09:00:00Z",
+            "index": 1,
+            "property": {
+              "kind": "field",
+              "key": "URL"
+            }
+          },
+          "before": {
+            "type": "field",
+            "protected": false,
+            "text": "https://card.example/v1"
+          },
+          "after": {
+            "type": "field",
+            "protected": false,
+            "text": "https://card.example/v1-rewritten"
+          }
+        }
+      ]
+    },
+    {
+      "scope": "entry",
+      "uuid": "00000023-d1ff-4000-8000-000000000000",
+      "path": "/Tour/Moved",
+      "status": "modified",
+      "moved_from": "/Old/Moved",
+      "changes": []
+    },
+    {
+      "scope": "entry",
+      "uuid": "00000022-d1ff-4000-8000-000000000000",
+      "path": null,
+      "status": "modified",
+      "moved_from": null,
+      "changes": [
+        {
+          "property": {
+            "kind": "field",
+            "key": "UserName"
+          },
+          "before": {
+            "type": "field",
+            "protected": false,
+            "text": "nobody"
+          },
+          "after": {
+            "type": "field",
+            "protected": false,
+            "text": "somebody"
+          }
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "entries_added": 0,
+    "entries_removed": 0,
+    "entries_modified": 3,
+    "entries_moved": 1,
+    "groups_added": 0,
+    "groups_removed": 0,
+    "groups_modified": 0,
+    "groups_moved": 0,
+    "node_properties": 29,
+    "database_properties": 0,
+    "suppressed": 12
+  },
+  "warnings": []
+}

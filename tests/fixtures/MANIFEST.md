@@ -76,6 +76,7 @@ does on save; default mode suppresses that noise.
 | `trash_entry/` | base plus a Recycle Bin group (UUID `00000004`) set as the recycle bin | Email moved into the recycle bin | `- ENTRY /Personal/Email`; with `--include-recycle-bin`, `~ ENTRY /Recycle Bin/Email (moved from /Personal/Email)` |
 | `recycle_bin_root/` | base with the recycle-bin UUID set to the root group | Bank's UserName alice -> bob | `~ UserName: alice -> bob` (the root is never hidden) |
 | `kdf_downgrade/` | base with Argon2id 2 MiB, 4 passes | Argon2id 1 MiB, 2 passes | `~ KdfMemory`, `~ KdfIterations` and two `warning: KDF weakened:` lines |
+| `format_tour/` | its own vault: Tour/Card (every property kind: a protected Password `pa"ss\wo` + newline + `rd-` + non-ASCII, a protected custom `PIN`, a custom field named `Tag[x]`, Notes with a blank line, a protected attachment, auto-type with two associations for one window, sealed custom data `KPXC_BROWSER`, three history items: two sharing 2026-01-02 09:00, one without a time), an untitled entry, Old/Moved | Notes edited, Password protection off, tags `work` -> `a]b`, attachment `backup.key` added, icon 0 -> 12, second association edited, custom data rotated, the second same-time history item rewritten and the untimed one dropped, untitled entry's UserName edited, Moved moved to Tour | every documented form (see `docs/FORMAT.md`, whose examples are this pair's output) |
 
 ### `keyfile_only/` (synthetic, single vault)
 

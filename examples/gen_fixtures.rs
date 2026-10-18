@@ -29,7 +29,10 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use chrono::NaiveDateTime;
 use keepass::config::KdfConfig;
-use keepass::db::{EntryId, GroupId, History, Times, Value, fields};
+use keepass::db::{
+    AutoType, AutoTypeAssociation, CustomDataItem, CustomDataValue, Entry, EntryId, GroupId,
+    History, Times, Value, fields,
+};
 use keepass::{Database, DatabaseKey};
 use uuid::Uuid;
 
@@ -51,6 +54,17 @@ const EMAIL: EntryId = EntryId::from_uuid(id(0x12));
 const VPN: EntryId = EntryId::from_uuid(id(0x13));
 const GITHUB: EntryId = EntryId::from_uuid(id(0x14));
 const RECYCLE_BIN: GroupId = GroupId::from_uuid(id(0x04));
+const TOUR: GroupId = GroupId::from_uuid(id(0x05));
+const OLD: GroupId = GroupId::from_uuid(id(0x06));
+const CARD: EntryId = EntryId::from_uuid(id(0x21));
+const UNTITLED: EntryId = EntryId::from_uuid(id(0x22));
+const MOVED: EntryId = EntryId::from_uuid(id(0x23));
+
+/// A secret with a double quote, a backslash, a newline and non-ASCII
+/// characters, so the canary also searches for its escaped forms.
+const TRICKY_SECRET: &str = "pa\"ss\\wo\nrd-\u{e9}\u{20ac}";
+/// Between two history items sharing one modification time.
+const SHARED_TIME: &str = "2026-01-02 09:00:00";
 
 /// When the base vault was "created", and when the edit in each `after` happened.
 const CREATED: &str = "2026-01-01 09:00:00";
@@ -184,6 +198,147 @@ fn save_with(db: &Database, path: &Path, key: DatabaseKey) -> Result<()> {
     let mut f = File::create(path).with_context(|| format!("create {}", path.display()))?;
     db.save(&mut f, key)
         .with_context(|| format!("save {}", path.display()))?;
+    Ok(())
+}
+
+/// The format tour: one vault exercising every form the text diff and dump
+/// can print (see docs/FORMAT.md).
+///
+/// ```text
+/// Root
+/// ├── Tour
+/// │   ├── Card      every kind of property, a tricky protected password,
+/// │   │             sealed custom data, history (two items sharing a time,
+/// │   │             one without a time)
+/// │   └── (untitled entry)
+/// └── Old
+///     └── Moved
+/// ```
+fn format_tour() -> Result<Database> {
+    let mut db = new_vault();
+    db.meta.database_name = Some("format tour".into());
+    {
+        let mut root = db.root_mut();
+        root.add_group_with_id(TOUR)?.name = "Tour".into();
+        root.add_group_with_id(OLD)?.name = "Old".into();
+    }
+    {
+        let mut tour = db.group_mut(TOUR).context("Tour group")?;
+        let mut card = tour.add_entry_with_id(CARD)?;
+        card.set_unprotected(fields::TITLE, "Card");
+        card.set_unprotected(fields::USERNAME, "alice");
+        card.set_protected(fields::PASSWORD, TRICKY_SECRET);
+        card.set_unprotected(fields::URL, "https://card.example");
+        card.set_unprotected(fields::NOTES, "line one\n\nline three");
+        card.set_protected("PIN", "4821-pin-secret");
+        card.set_unprotected("Tag[x]", "a -> b");
+        card.tags.push("work".into());
+        card.add_attachment(
+            "key.pem",
+            Value::protected(b"-----BEGIN KEY-----\nattachment-secret-1\n".to_vec()),
+        );
+        card.set_icon_builtin(0);
+        card.autotype = Some(AutoType {
+            enabled: true,
+            default_sequence: Some("{USERNAME}{TAB}{PASSWORD}{ENTER}".into()),
+            associations: vec![
+                AutoTypeAssociation {
+                    window: "Bank*".into(),
+                    sequence: "{PASSWORD}".into(),
+                },
+                AutoTypeAssociation {
+                    window: "Bank*".into(),
+                    sequence: "{USERNAME}".into(),
+                },
+            ],
+            ..AutoType::default()
+        });
+        card.custom_data.insert(
+            "KPXC_BROWSER".into(),
+            CustomDataItem {
+                value: Some(CustomDataValue::String("browser-secret-value-1".into())),
+                last_modification_time: Some(at(CREATED)),
+            },
+        );
+    }
+    {
+        let mut tour = db.group_mut(TOUR).context("Tour group")?;
+        let mut untitled = tour.add_entry_with_id(UNTITLED)?;
+        untitled.set_unprotected(fields::USERNAME, "nobody");
+    }
+    {
+        let mut old = db.group_mut(OLD).context("Old group")?;
+        let mut moved = old.add_entry_with_id(MOVED)?;
+        moved.set_unprotected(fields::TITLE, "Moved");
+    }
+    freeze_all_times(&mut db, CREATED);
+    // History: two items sharing a time, and one without a time.
+    let template: Entry = (*db.entry(CARD).context("Card")?).clone();
+    let item = |url: &str, t: Option<&str>| {
+        let mut e = template.clone();
+        e.set_unprotected(fields::URL, url);
+        e.times.last_modification = t.map(at);
+        e
+    };
+    let mut history = History::default();
+    // add_entry inserts at the front: add oldest first.
+    history.add_entry(item("https://card.example/untimed", None));
+    history.add_entry(item("https://card.example/v1", Some(SHARED_TIME)));
+    history.add_entry(item("https://card.example/v2", Some(SHARED_TIME)));
+    db.entry_mut(CARD).context("Card")?.history = Some(history);
+    Ok(db)
+}
+
+/// The edit applied to the format tour's `after`.
+fn format_tour_edit(db: &mut Database) -> Result<()> {
+    {
+        let mut card = db.entry_mut(CARD).context("Card")?;
+        card.set_unprotected(fields::NOTES, "line one\n\nline 3");
+        card.set_unprotected(fields::PASSWORD, TRICKY_SECRET);
+        card.tags.retain(|t| t != "work");
+        card.tags.push("a]b".into());
+        // Added, not replaced: keepass pools attachment data, and replacing
+        // key.pem would rewrite what the history items reference too.
+        card.add_attachment(
+            "backup.key",
+            Value::protected(b"attachment-secret-2".to_vec()),
+        );
+        card.set_icon_builtin(12);
+        if let Some(at) = card.autotype.as_mut() {
+            at.associations[1].sequence = "{USERNAME}{ENTER}".into();
+        }
+        card.custom_data.insert(
+            "KPXC_BROWSER".into(),
+            CustomDataItem {
+                value: Some(CustomDataValue::String("browser-secret-value-2".into())),
+                last_modification_time: Some(at(EDITED)),
+            },
+        );
+        // Rewrite the second of the two items sharing a time (History[..#2]),
+        // drop the untimed one (History[unknown]).
+        let items = card
+            .history
+            .as_ref()
+            .map(|h| h.get_entries().clone())
+            .unwrap_or_default();
+        let mut history = History::default();
+        for mut item in items.into_iter().rev() {
+            if item.times.last_modification.is_none() {
+                continue;
+            }
+            if item.get(fields::URL) == Some("https://card.example/v1") {
+                item.set_unprotected(fields::URL, "https://card.example/v1-rewritten");
+            }
+            history.add_entry(item);
+        }
+        card.history = Some(history);
+    }
+    stamp(db, CARD, EDITED);
+    db.entry_mut(UNTITLED)
+        .context("untitled")?
+        .set_unprotected(fields::USERNAME, "somebody");
+    stamp(db, UNTITLED, EDITED);
+    db.entry_mut(MOVED).context("Moved")?.move_to(TOUR)?;
     Ok(())
 }
 
@@ -467,6 +622,10 @@ fn main() -> Result<()> {
             Ok(())
         },
     )?;
+
+    // Every form the text diff and dump can print, a tricky secret and sealed
+    // custom data (docs/FORMAT.md's examples come from this pair).
+    pair("format_tour", format_tour()?, format_tour_edit)?;
 
     // A vault with no password: opened by its key file alone.
     {

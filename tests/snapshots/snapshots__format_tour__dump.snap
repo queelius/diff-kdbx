@@ -1,0 +1,105 @@
+---
+source: tests/snapshots.rs
+expression: "dump(&after, &DumpOptions::default())"
+---
+DATABASE
+  Version: 4.1
+  Kdf: Argon2id
+  KdfMemory: 1048576
+  KdfIterations: 2
+  KdfParallelism: 1
+  KdfVersion: 19
+  OuterCipher: AES-256
+  InnerCipher: ChaCha20
+  Compression: gzip
+  DatabaseName: "format tour"
+GROUP "/" [uuid:00000001-d1ff-4000-8000-000000000000]
+  Name: "Root"
+  CreationTime: 2026-01-01T09:00:00Z
+  Expires: false
+GROUP "/Old/" [uuid:00000006-d1ff-4000-8000-000000000000]
+  Name: "Old"
+  CreationTime: 2026-01-01T09:00:00Z
+  Expires: false
+GROUP "/Tour/" [uuid:00000005-d1ff-4000-8000-000000000000]
+  Name: "Tour"
+  CreationTime: 2026-01-01T09:00:00Z
+  Expires: false
+ENTRY "/Tour/Card" [uuid:00000021-d1ff-4000-8000-000000000000]
+  Title: "Card"
+  UserName: "alice"
+  Password: <sealed:8d7ca101> (unprotected)
+  URL: "https://card.example"
+  Notes:
+    | line one
+    |
+    | line 3
+  "PIN": <sealed:7bd6a759>
+  "Tag[x]": "a -> b"
+  Tag["a]b"]
+  Attachment["backup.key"]: <sealed:971cab75> (19 bytes, protected)
+  Attachment["key.pem"]: <sealed:9fe344a1> (40 bytes, protected)
+  QualityCheck: true
+  Icon: standard 12
+  AutoType.Enabled: true
+  AutoType.DefaultSequence: "{USERNAME}{TAB}{PASSWORD}{ENTER}"
+  AutoType.DataTransferObfuscation: none
+  AutoType.Association["Bank*"]: "{PASSWORD}"
+  AutoType.Association["Bank*"#2]: "{USERNAME}{ENTER}"
+  CreationTime: 2026-01-01T09:00:00Z
+  Expires: false
+  CustomData["KPXC_BROWSER"]: <sealed:2e7eb066>
+  History[2026-01-02T09:00:00Z].Title: "Card"
+  History[2026-01-02T09:00:00Z].UserName: "alice"
+  History[2026-01-02T09:00:00Z].Password: <sealed:8d7ca101>
+  History[2026-01-02T09:00:00Z].URL: "https://card.example/v2"
+  History[2026-01-02T09:00:00Z].Notes:
+    | line one
+    |
+    | line three
+  History[2026-01-02T09:00:00Z]."PIN": <sealed:7bd6a759>
+  History[2026-01-02T09:00:00Z]."Tag[x]": "a -> b"
+  History[2026-01-02T09:00:00Z].Tag["work"]
+  History[2026-01-02T09:00:00Z].Attachment["key.pem"]: <sealed:9fe344a1> (40 bytes, protected)
+  History[2026-01-02T09:00:00Z].QualityCheck: true
+  History[2026-01-02T09:00:00Z].Icon: standard 0
+  History[2026-01-02T09:00:00Z].AutoType.Enabled: true
+  History[2026-01-02T09:00:00Z].AutoType.DefaultSequence: "{USERNAME}{TAB}{PASSWORD}{ENTER}"
+  History[2026-01-02T09:00:00Z].AutoType.DataTransferObfuscation: none
+  History[2026-01-02T09:00:00Z].AutoType.Association["Bank*"]: "{PASSWORD}"
+  History[2026-01-02T09:00:00Z].AutoType.Association["Bank*"#2]: "{USERNAME}"
+  History[2026-01-02T09:00:00Z].CreationTime: 2026-01-01T09:00:00Z
+  History[2026-01-02T09:00:00Z].Expires: false
+  History[2026-01-02T09:00:00Z].CustomData["KPXC_BROWSER"]: <sealed:d4135488>
+  History[2026-01-02T09:00:00Z#2].Title: "Card"
+  History[2026-01-02T09:00:00Z#2].UserName: "alice"
+  History[2026-01-02T09:00:00Z#2].Password: <sealed:8d7ca101>
+  History[2026-01-02T09:00:00Z#2].URL: "https://card.example/v1-rewritten"
+  History[2026-01-02T09:00:00Z#2].Notes:
+    | line one
+    |
+    | line three
+  History[2026-01-02T09:00:00Z#2]."PIN": <sealed:7bd6a759>
+  History[2026-01-02T09:00:00Z#2]."Tag[x]": "a -> b"
+  History[2026-01-02T09:00:00Z#2].Tag["work"]
+  History[2026-01-02T09:00:00Z#2].Attachment["key.pem"]: <sealed:9fe344a1> (40 bytes, protected)
+  History[2026-01-02T09:00:00Z#2].QualityCheck: true
+  History[2026-01-02T09:00:00Z#2].Icon: standard 0
+  History[2026-01-02T09:00:00Z#2].AutoType.Enabled: true
+  History[2026-01-02T09:00:00Z#2].AutoType.DefaultSequence: "{USERNAME}{TAB}{PASSWORD}{ENTER}"
+  History[2026-01-02T09:00:00Z#2].AutoType.DataTransferObfuscation: none
+  History[2026-01-02T09:00:00Z#2].AutoType.Association["Bank*"]: "{PASSWORD}"
+  History[2026-01-02T09:00:00Z#2].AutoType.Association["Bank*"#2]: "{USERNAME}"
+  History[2026-01-02T09:00:00Z#2].CreationTime: 2026-01-01T09:00:00Z
+  History[2026-01-02T09:00:00Z#2].Expires: false
+  History[2026-01-02T09:00:00Z#2].CustomData["KPXC_BROWSER"]: <sealed:d4135488>
+ENTRY "/Tour/Moved" [uuid:00000023-d1ff-4000-8000-000000000000]
+  Title: "Moved"
+  QualityCheck: true
+  CreationTime: 2026-01-01T09:00:00Z
+  Expires: false
+ENTRY (no path) [uuid:00000022-d1ff-4000-8000-000000000000]
+  UserName: "somebody"
+  QualityCheck: true
+  CreationTime: 2026-01-01T09:00:00Z
+  Expires: false
