@@ -337,6 +337,32 @@ DATABASE
     }
 
     #[test]
+    fn blank_pieces_of_a_multi_line_change_carry_no_trailing_whitespace() {
+        let cs = ChangeSet::new(
+            vec![entry(
+                1,
+                "/x",
+                NodeStatus::modified(
+                    None,
+                    vec![PropertyChange::new(
+                        field("Notes"),
+                        plain("a\n\nb"),
+                        plain("a\n\nc"),
+                    )],
+                ),
+            )],
+            vec![],
+            0,
+        );
+        let out = render_text(&cs, &TextOptions::default());
+        assert!(
+            out.contains("  ~ Notes:\n      - | a\n      - |\n      - | b\n      + | a\n      + |\n      + | c\n"),
+            "{out:?}"
+        );
+        assert!(out.lines().all(|l| l == l.trim_end()), "{out:?}");
+    }
+
+    #[test]
     fn kdf_warnings_render() {
         let w = |weakening| warning(&DiffWarning::KdfWeakened { weakening });
         assert_eq!(

@@ -237,3 +237,22 @@ fn an_empty_value_is_an_empty_token() {
     assert!(out.contains("\n  Title: \"\"\n"), "{out}");
     assert!(out.contains("ENTRY (no path) [uuid:"), "{out}");
 }
+
+/// A blank line of a multi-line value is the bare continuation prefix, so the
+/// renderer never adds trailing whitespace (git diff --check stays clean). A
+/// value line made of spaces is content and keeps them.
+#[test]
+fn blank_continuation_lines_carry_no_trailing_whitespace() {
+    let snap = snapshot(
+        Group::new(id(1), "Root")
+            .with_entry(titled(0x11, "Bank").with_field("Notes", Field::plain("a\n\n  \nb\n"))),
+    );
+    let out = dump(&snap, &DumpOptions::default());
+    assert!(
+        out.contains("\n  Notes:\n    | a\n    |\n    |   \n"),
+        "{out:?}"
+    );
+    for line in out.lines().filter(|l| l.trim().is_empty() || *l == "    |") {
+        assert_eq!(line, "    |", "{out:?}");
+    }
+}

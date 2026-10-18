@@ -37,3 +37,30 @@ fn legacy_kdbx40_dump_is_pinned() {
     let snap = common::open("legacy_kdbx40/vault.kdbx");
     insta::assert_snapshot!(dump(&snap, &DumpOptions::default()));
 }
+
+/// The equivalent of `git diff --check` over every rendering of every
+/// fixture: no line ends in whitespace and none carries a carriage return.
+#[test]
+fn no_output_line_ends_in_whitespace() {
+    use diff_kdbx::{Noise, RecycleBin};
+    let diff = DiffOptions::new(Noise::Show, RecycleBin::Include);
+    let shown = DumpOptions::new(Noise::Show, RecycleBin::Include);
+    for name in common::pairs() {
+        let before = common::open(&format!("{name}/before.kdbx"));
+        let after = common::open(&format!("{name}/after.kdbx"));
+        let cs = compute(&before, &after, &diff);
+        for out in [
+            render_text(&cs, &TextOptions::default()),
+            render_json(&cs, &JsonOptions::default()),
+            dump(&before, &shown),
+            dump(&after, &shown),
+        ] {
+            for line in out.lines() {
+                assert!(
+                    line == line.trim_end() && !line.contains('\r'),
+                    "{name}: trailing whitespace in {line:?}"
+                );
+            }
+        }
+    }
+}
