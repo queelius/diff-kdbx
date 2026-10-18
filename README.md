@@ -258,7 +258,9 @@ shape diff-kdbx defines itself, leaf by leaf:
   `{"kind": "auto_type_association", "window", "occurrence"}`,
   `{"kind": "history", "modified": "<time>" | null, "index", "property": {...}}`,
   or a bare kind (`name`, `format`, `notes`, `override_url`, `quality_check`,
-  `icon`, `previous_parent`).
+  `icon`, `previous_parent`). JSON counters are 0-based (`index`,
+  `occurrence`); the text format's `#N` is 1-based (`#2` is index 1), like
+  the path grammar's `:N`.
 - A value is `{"type", ...}`:
   `{"type": "field", "protected": bool, "text": "..."}` or
   `{"type": "field", "protected": bool, "sealed": "<64 hex>"}`,
