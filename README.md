@@ -8,12 +8,12 @@ meaningful diffs out of `git diff`, `git log -p` and `git show` instead of
 ```
 $ diff-kdbx tests/fixtures/move_and_edit/before.kdbx tests/fixtures/move_and_edit/after.kdbx
 summary: entries +0/-0/~1 (1 moved), groups +0/-0/~0 (0 moved), properties 1, database 0, suppressed 4
-~ ENTRY /Personal/VPN (moved from /Work/VPN)
-  ~ URL: https://vpn.example -> https://vpn2.example
+~ ENTRY "/Personal/VPN" (moved from "/Work/VPN")
+  ~ URL: "https://vpn.example" -> "https://vpn2.example"
 
 $ diff-kdbx tests/fixtures/password_change/before.kdbx tests/fixtures/password_change/after.kdbx
 summary: entries +0/-0/~1 (0 moved), groups +0/-0/~0 (0 moved), properties 1, database 0, suppressed 3
-~ ENTRY /Personal/Bank
+~ ENTRY "/Personal/Bank"
   ~ Password: <sealed:96ea7ab3> -> <sealed:8422c055>
 ```
 
@@ -146,11 +146,13 @@ structural line.
 every property in canonical order:
 
 ```
-ENTRY /Personal/Bank [uuid:00000011-d1ff-4000-8000-000000000000]
-  Title: Bank
-  UserName: alice
+ENTRY "/Personal/Bank" [uuid:00000011-d1ff-4000-8000-000000000000]
+  Title: "Bank"
+  UserName: "alice"
   Password: <sealed:8422c055>
-  URL: https://bank.example
+  URL: "https://bank.example"
+  "otp": <sealed:af5c6854>
+  Tag["finance"]
   QualityCheck: true
   CreationTime: 2026-01-01T09:00:00Z
   Expires: false
@@ -161,6 +163,21 @@ cannot disagree: everything the diff can report (fields and their protection
 flags, tags, attachments, history items, times, icons, colors, auto-type,
 custom data, group settings, `<Meta>` settings, the KDF and ciphers) is in
 the dump.
+
+**Grammar.** Every line reads back unambiguously, which matters because
+the dump is what git diffs. Closed-set names are bare: the five standard
+fields (`Title`, `UserName`, `Password`, `URL`, `Notes`), typed keys
+(`CreationTime`, `ProtectPassword`, `Kdf`, ...), UUIDs, timestamps, numbers,
+`true`/`false`, `<sealed:...>`. Every vault-controlled string printed next to
+that syntax is one double-quoted token with backslash escapes (`\"`, `\\`,
+`\n`, `\u{XXXX}`): a custom field's name (`"otp": ...`), the vault part of a
+bracketed key (`Tag["a]b"]`, `Attachment["codes.txt"]`, `CustomData["k"]`,
+`AutoType.Association["Bank*"]`), a plain single-line value (`URL: "b -> c"`)
+and a node path (`ENTRY "/Personal/Bank"`). So a custom field named
+`Tag[x]` or `History[...].Password`, a value `<sealed:2668135c>` or `a -> b`,
+or a title imitating `(moved from ...)` can never pass for anything else.
+Multi-line values (Notes) print as continuation lines (`    | line`), whose
+content cannot be mistaken for a property line.
 
 **Values.** Sealed values show the first 8 hex characters of their
 fingerprint (`<sealed:8422c055>`). A plain value whose protection flag is set

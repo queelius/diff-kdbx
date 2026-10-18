@@ -12,15 +12,15 @@ DATABASE
   OuterCipher: AES-256
   InnerCipher: ChaCha20
   Compression: gzip
-GROUP / [uuid:cedb7331-5eea-4cd1-abde-d038400c09e4]
-  Name:
+GROUP "/" [uuid:cedb7331-5eea-4cd1-abde-d038400c09e4]
+  Name: ""
   CreationTime: 2026-04-28T03:25:58Z
   Expires: false
-ENTRY /Test Entry [uuid:f25e804a-0508-4bdf-a758-0bafc4e7fdc2]
-  Title: Test Entry
-  UserName: alice
+ENTRY "/Test Entry" [uuid:f25e804a-0508-4bdf-a758-0bafc4e7fdc2]
+  Title: "Test Entry"
+  UserName: "alice"
   Password: <sealed:33eedafe>
-  URL: https://example.com
+  URL: "https://example.com"
   QualityCheck: true
   CreationTime: 2026-04-28T03:25:58Z
   Expires: false

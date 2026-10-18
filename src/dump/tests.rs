@@ -46,12 +46,12 @@ fn small_vault_dump_is_pinned() {
     let expected = format!(
         "DATABASE
   Version: 4.1
-  DatabaseName: Vault
-GROUP / [uuid:00000000-0000-0000-0000-000000000001]
-  Name: Root
+  DatabaseName: \"Vault\"
+GROUP \"/\" [uuid:00000000-0000-0000-0000-000000000001]
+  Name: \"Root\"
   IsExpanded: true
-ENTRY /Bank [uuid:00000000-0000-0000-0000-000000000011]
-  Title: Bank
+ENTRY \"/Bank\" [uuid:00000000-0000-0000-0000-000000000011]
+  Title: \"Bank\"
   Password: <sealed:{}>
   Notes:
     | first
@@ -129,46 +129,6 @@ fn every_property_compute_can_report_appears_in_the_dump() {
 }
 
 #[test]
-fn values_cannot_forge_structural_lines() {
-    let evil = "x\n+ ENTRY /forged\nGROUP /forged/\nENTRY /forged [uuid:0]";
-    let mut entry = titled(0x11, evil)
-        .with_field("Notes", Field::plain(evil))
-        .with_field(evil, Field::plain(evil));
-    entry.tags.insert(evil.into());
-    entry.override_url = Some(evil.into());
-    let mut snap = snapshot(
-        Group::new(id(1), evil)
-            .with_group(Group::new(id(2), evil))
-            .with_entry(entry),
-    );
-    snap.meta.database_description = Some(evil.into());
-    snap.meta.database_name = Some(evil.into());
-    let out = dump(&snap, &strict());
-    let structural: Vec<&str> = out.lines().filter(|l| !l.starts_with(' ')).collect();
-    assert_eq!(
-        structural.len(),
-        4,
-        "DATABASE, two groups, one entry:\n{out}"
-    );
-    assert!(structural.iter().all(|l| {
-        ["DATABASE", "GROUP ", "ENTRY "]
-            .iter()
-            .any(|k| l.starts_with(k))
-    }));
-    assert!(!out.contains("\n+ ENTRY"), "{out}");
-    for line in out.lines().filter(|l| l.starts_with("    ")) {
-        assert!(
-            line.starts_with("    | "),
-            "continuation without prefix: {line:?}"
-        );
-    }
-    assert!(
-        out.contains("    | + ENTRY /forged"),
-        "Notes stay line-diffable:\n{out}"
-    );
-}
-
-#[test]
 fn secrets_are_sealed_and_the_title_is_an_address() {
     let mut snap = base();
     entry_mut(&mut snap.root, id(0x11))
@@ -178,8 +138,8 @@ fn secrets_are_sealed_and_the_title_is_an_address() {
     let out = dump(&snap, &DumpOptions::default());
     assert!(!out.contains("old-password"), "{out}");
     assert!(out.contains("  Password: <sealed:"), "{out}");
-    assert!(out.contains("ENTRY /Personal/Bank "), "{out}");
-    assert!(out.contains("  Title: Bank (protected)"), "{out}");
+    assert!(out.contains("ENTRY \"/Personal/Bank\" "), "{out}");
+    assert!(out.contains("  Title: \"Bank\" (protected)"), "{out}");
 }
 
 #[test]
@@ -202,17 +162,17 @@ fn recycle_bin_is_hidden_by_default_and_shown_on_request() {
         .push(Group::new(id(0x50), "Recycle Bin").with_entry(titled(0x51, "Trashed")));
     snap.meta.recycle_bin = Some(id(0x50));
     let default = dump(&snap, &DumpOptions::default());
-    assert!(!default.contains("Trashed") && !default.contains("GROUP /Recycle Bin/"));
-    assert!(default.contains("ENTRY /Personal/Bank"));
+    assert!(!default.contains("Trashed") && !default.contains("GROUP \"/Recycle Bin/\""));
+    assert!(default.contains("ENTRY \"/Personal/Bank\""));
     let shown = dump(
         &snap,
         &DumpOptions::new(Noise::Suppress, RecycleBin::Include),
     );
-    assert!(shown.contains("GROUP /Recycle Bin/ "));
-    assert!(shown.contains("ENTRY /Recycle Bin/Trashed "));
+    assert!(shown.contains("GROUP \"/Recycle Bin/\" "));
+    assert!(shown.contains("ENTRY \"/Recycle Bin/Trashed\" "));
     // A recycle-bin UUID naming the root hides nothing.
     snap.meta.recycle_bin = Some(id(1));
-    assert!(dump(&snap, &DumpOptions::default()).contains("ENTRY /Recycle Bin/Trashed "));
+    assert!(dump(&snap, &DumpOptions::default()).contains("ENTRY \"/Recycle Bin/Trashed\" "));
 }
 
 #[test]
@@ -227,10 +187,10 @@ fn custom_fields_and_attachments_are_dumped() {
         kdbx_core::model::Sealing::Fingerprint(&key()).attachment(b"codes", false),
     );
     let out = dump(&snap, &DumpOptions::default());
-    assert!(out.contains("  ApiKey: key-1"), "{out}");
-    assert!(out.contains("  otp: <sealed:"), "{out}");
+    assert!(out.contains("  \"ApiKey\": \"key-1\""), "{out}");
+    assert!(out.contains("  \"otp\": <sealed:"), "{out}");
     assert!(
-        out.contains("  Attachment[recovery.txt]: <sealed:"),
+        out.contains("  Attachment[\"recovery.txt\"]: <sealed:"),
         "{out}"
     );
     assert!(out.contains(" (5 bytes)"), "{out}");
@@ -251,17 +211,17 @@ fn nodes_are_in_tree_order_with_same_named_siblings_by_uuid() {
         headers,
         [
             "DATABASE",
-            "GROUP /",
-            "ENTRY /Dup",
-            "ENTRY /Dup:2",
-            "GROUP /Personal/",
-            "ENTRY /Personal/Bank",
-            "ENTRY /Personal/Email",
-            "GROUP /Work/",
-            "ENTRY /Work/VPN",
+            "GROUP \"/\"",
+            "ENTRY \"/Dup\"",
+            "ENTRY \"/Dup:2\"",
+            "GROUP \"/Personal/\"",
+            "ENTRY \"/Personal/Bank\"",
+            "ENTRY \"/Personal/Email\"",
+            "GROUP \"/Work/\"",
+            "ENTRY \"/Work/VPN\"",
         ]
     );
-    assert!(out.contains("ENTRY /Dup [uuid:00000000-0000-0000-0000-000000000030]"));
+    assert!(out.contains("ENTRY \"/Dup\" [uuid:00000000-0000-0000-0000-000000000030]"));
     assert_eq!(
         out,
         dump(&snap.clone(), &DumpOptions::default()),
@@ -270,10 +230,10 @@ fn nodes_are_in_tree_order_with_same_named_siblings_by_uuid() {
 }
 
 #[test]
-fn an_empty_value_keeps_its_colon() {
+fn an_empty_value_is_an_empty_token() {
     let snap = snapshot(Group::new(id(1), "").with_entry(titled(0x11, "")));
     let out = dump(&snap, &DumpOptions::default());
-    assert!(out.contains("\n  Name:\n"), "{out}");
-    assert!(out.contains("\n  Title:\n"), "{out}");
+    assert!(out.contains("\n  Name: \"\"\n"), "{out}");
+    assert!(out.contains("\n  Title: \"\"\n"), "{out}");
     assert!(out.contains("ENTRY (no path) [uuid:"), "{out}");
 }

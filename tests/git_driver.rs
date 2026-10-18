@@ -118,7 +118,7 @@ fn diff_between_fixtures_shows_textconv_output() {
     // The "after" fixture adds GitHub to Work: git's line diff of the two
     // dumps shows its block as added lines, and nothing else changed.
     assert!(
-        stdout.contains("\n+ENTRY /Work/GitHub [uuid:00000014-d1ff-4000-8000-000000000000]\n"),
+        stdout.contains("\n+ENTRY \"/Work/GitHub\" [uuid:00000014-d1ff-4000-8000-000000000000]\n"),
         "git diff output didn't contain the added entry.\nstdout:\n{}",
         stdout
     );

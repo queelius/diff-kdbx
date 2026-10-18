@@ -22,7 +22,7 @@ use kdbx_core::model::{
     AutoTypeObfuscation, Compression, CustomValue, Entry, FormatVersion, Group, Icon, InnerCipher,
     KdfInfo, Meta, OuterCipher, Rgb, Snapshot, Times, Timestamp, Value,
 };
-use kdbx_core::text::escape_inline;
+use kdbx_core::text::quote;
 use serde::{Serialize, Serializer};
 use uuid::Uuid;
 
@@ -680,27 +680,32 @@ impl fmt::Display for HistoryKey {
     }
 }
 
-/// The line-safe text label: user-supplied parts (field names, tags, keys)
-/// pass through [`escape_inline`], so a label is always one printable line.
+/// The text label, in a reversible grammar: closed-set names (standard field
+/// names, typed keys, UUIDs, timestamps) are bare, and every vault-supplied
+/// part (a custom field name, a tag, an attachment name, a custom-data key,
+/// an auto-type window) is one [`quote`] token. So a label is always one
+/// printable line, and no vault string can imitate another label: a custom
+/// field named `Tag[x]` prints `"Tag[x]"`, a tag `a]b` prints `Tag["a]b"]`.
 impl fmt::Display for Property {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Property::Name => f.write_str("Name"),
             Property::Format => f.write_str("Version"),
             Property::Header(k) => write!(f, "{k}"),
-            Property::PublicCustomData(k) => write!(f, "PublicCustomData[{}]", escape_inline(k)),
+            Property::PublicCustomData(k) => write!(f, "PublicCustomData[{}]", quote(k)),
             Property::Meta(k) => write!(f, "{k}"),
-            Property::Field(name) => f.write_str(&escape_inline(name.as_str())),
+            Property::Field(FieldName::Standard(field)) => f.write_str(field.kdbx_name()),
+            Property::Field(FieldName::Custom(name)) => f.write_str(&quote(name)),
             Property::Notes => f.write_str("Notes"),
-            Property::Tag(t) => write!(f, "Tag[{}]", escape_inline(t)),
-            Property::Attachment(n) => write!(f, "Attachment[{}]", escape_inline(n)),
+            Property::Tag(t) => write!(f, "Tag[{}]", quote(t)),
+            Property::Attachment(n) => write!(f, "Attachment[{}]", quote(n)),
             Property::OverrideUrl => f.write_str("OverrideURL"),
             Property::QualityCheck => f.write_str("QualityCheck"),
             Property::Icon => f.write_str("Icon"),
             Property::Color(role) => write!(f, "{role}"),
             Property::AutoType(k) => write!(f, "AutoType.{k}"),
             Property::AutoTypeAssociation { window, occurrence } => {
-                write!(f, "AutoType.Association[{}", escape_inline(window))?;
+                write!(f, "AutoType.Association[{}", quote(window))?;
                 if *occurrence > 0 {
                     write!(f, "#{}", occurrence + 1)?;
                 }
@@ -709,9 +714,9 @@ impl fmt::Display for Property {
             Property::GroupFlag(flag) => write!(f, "{flag}"),
             Property::Time(t) => write!(f, "{t}"),
             Property::PreviousParent => f.write_str("PreviousParentGroup"),
-            Property::CustomData(k) => write!(f, "CustomData[{}]", escape_inline(k)),
+            Property::CustomData(k) => write!(f, "CustomData[{}]", quote(k)),
             Property::CustomDataModified(k) => {
-                write!(f, "CustomData[{}].Modified", escape_inline(k))
+                write!(f, "CustomData[{}].Modified", quote(k))
             }
             Property::CustomIcon(id) => write!(f, "CustomIcon[{id}]"),
             Property::CustomIconName(id) => write!(f, "CustomIcon[{id}].Name"),

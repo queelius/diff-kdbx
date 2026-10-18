@@ -176,7 +176,7 @@ fn strict_disables_suppression() {
 fn password_change_diff_is_masked_modified() {
     let (code, out) = pair("password_change", &[]);
     assert_eq!(code, 1, "{out}");
-    assert!(out.contains("~ ENTRY /Personal/Bank"), "{out}");
+    assert!(out.contains("~ ENTRY \"/Personal/Bank\""), "{out}");
     assert!(
         predicate::str::is_match(r"~ Password: <sealed:[0-9a-f]{8}> -> <sealed:[0-9a-f]{8}>\n")
             .unwrap()
@@ -194,7 +194,7 @@ fn password_change_diff_is_masked_modified() {
 fn password_change_diff_show_secrets_reveals_both_values() {
     let (_, out) = pair("password_change", &["--show-secrets"]);
     assert!(
-        out.contains("~ Password: old-password (protected) -> new-password (protected)"),
+        out.contains("~ Password: \"old-password\" (protected) -> \"new-password\" (protected)"),
         "{out}"
     );
 }
@@ -203,7 +203,7 @@ fn password_change_diff_show_secrets_reveals_both_values() {
 fn remove_entry_reports_removed() {
     let (code, out) = pair("remove_entry", &[]);
     assert_eq!(code, 1);
-    assert!(out.contains("- ENTRY /Personal/Email"), "{out}");
+    assert!(out.contains("- ENTRY \"/Personal/Email\""), "{out}");
 }
 
 /// A move is one record with its origin, and no property noise (the
@@ -213,7 +213,7 @@ fn move_entry_reports_single_move() {
     let (code, out) = pair("move_entry", &[]);
     assert_eq!(code, 1);
     assert!(
-        out.contains("~ ENTRY /Personal/VPN (moved from /Work/VPN)\n"),
+        out.contains("~ ENTRY \"/Personal/VPN\" (moved from \"/Work/VPN\")\n"),
         "{out}"
     );
     assert!(out.contains("properties 0,"), "{out}");
@@ -226,7 +226,7 @@ fn rename_group_reports_rename_without_cascade() {
     let (code, out) = pair("rename_group", &[]);
     assert_eq!(code, 1);
     assert!(
-        out.contains("~ GROUP /Office/\n  ~ Name: Work -> Office\n"),
+        out.contains("~ GROUP \"/Office/\"\n  ~ Name: \"Work\" -> \"Office\"\n"),
         "{out}"
     );
     assert!(out.contains("entries +0/-0/~0"), "{out}");
@@ -235,18 +235,18 @@ fn rename_group_reports_rename_without_cascade() {
 #[test]
 fn tag_diff_reports_added_tag() {
     let (_, out) = pair("tag_diff", &[]);
-    assert!(out.contains("  + Tag[finance]\n"), "{out}");
+    assert!(out.contains("  + Tag[\"finance\"]\n"), "{out}");
 }
 
 #[test]
 fn attachment_change_reports_modified_and_added() {
     let (_, out) = pair("attachment_change", &[]);
     assert!(
-        out.contains("  ~ Attachment[recovery.txt]: <sealed:"),
+        out.contains("  ~ Attachment[\"recovery.txt\"]: <sealed:"),
         "{out}"
     );
     assert!(
-        out.contains("  + Attachment[statement.pdf]: <sealed:"),
+        out.contains("  + Attachment[\"statement.pdf\"]: <sealed:"),
         "{out}"
     );
 }
@@ -257,7 +257,7 @@ fn attachment_change_reports_modified_and_added() {
 fn custom_field_change_is_reported_masked() {
     let (_, out) = pair("custom_field", &[]);
     assert!(
-        predicate::str::is_match(r"~ otp: <sealed:[0-9a-f]{8}> -> <sealed:[0-9a-f]{8}>")
+        predicate::str::is_match(r#"~ "otp": <sealed:[0-9a-f]{8}> -> <sealed:[0-9a-f]{8}>"#)
             .unwrap()
             .eval(&out),
         "{out}"
@@ -272,7 +272,7 @@ fn custom_field_change_is_reported_masked() {
             .output()
             .unwrap();
         let dump = String::from_utf8(dump.stdout).unwrap();
-        assert!(dump.contains("  otp: <sealed:"), "{dump}");
+        assert!(dump.contains("  \"otp\": <sealed:"), "{dump}");
     }
 }
 
@@ -280,11 +280,11 @@ fn custom_field_change_is_reported_masked() {
 fn history_grew_reports_edit_and_history() {
     let (_, out) = pair("history_grew", &[]);
     assert!(
-        out.contains("~ URL: https://bank.example -> https://bank.example/login"),
+        out.contains("~ URL: \"https://bank.example\" -> \"https://bank.example/login\""),
         "{out}"
     );
     assert!(
-        out.contains("  + History[2026-01-01T09:00:00Z].URL: https://bank.example\n"),
+        out.contains("  + History[2026-01-01T09:00:00Z].URL: \"https://bank.example\"\n"),
         "{out}"
     );
 }
@@ -298,7 +298,7 @@ fn legacy_kdbx40_is_readable() {
         .assert()
         .success()
         .stdout(predicate::str::contains("  Version: 4.0\n"))
-        .stdout(predicate::str::contains("ENTRY /Test Entry [uuid:"));
+        .stdout(predicate::str::contains("ENTRY \"/Test Entry\" [uuid:"));
 }
 
 #[test]
@@ -322,7 +322,7 @@ fn move_and_edit_is_one_record() {
     assert_eq!(code, 1);
     assert!(
         out.contains(
-            "~ ENTRY /Personal/VPN (moved from /Work/VPN)\n  ~ URL: https://vpn.example -> https://vpn2.example\n"
+            "~ ENTRY \"/Personal/VPN\" (moved from \"/Work/VPN\")\n  ~ URL: \"https://vpn.example\" -> \"https://vpn2.example\"\n"
         ),
         "{out}"
     );
@@ -336,7 +336,7 @@ fn move_and_rename_group_is_one_record() {
     let (code, out) = pair("move_and_rename_group", &[]);
     assert_eq!(code, 1);
     assert!(
-        out.contains("~ GROUP /Personal/Office/ (moved from /Work/)\n  ~ Name: Work -> Office\n"),
+        out.contains("~ GROUP \"/Personal/Office/\" (moved from \"/Work/\")\n  ~ Name: \"Work\" -> \"Office\"\n"),
         "{out}"
     );
     assert!(out.contains("entries +0/-0/~0 (0 moved)"), "{out}");
@@ -347,15 +347,15 @@ fn move_and_rename_group_is_one_record() {
 fn protected_title_stays_an_address() {
     let (_, out) = pair("protected_title", &[]);
     assert!(
-        out.contains("~ ENTRY /Personal/Bank\n  ~ Title: Bank -> Bank (protected)\n"),
+        out.contains("~ ENTRY \"/Personal/Bank\"\n  ~ Title: \"Bank\" -> \"Bank\" (protected)\n"),
         "{out}"
     );
     diff_cmd()
         .args(["--textconv", "tests/fixtures/protected_title/after.kdbx"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("ENTRY /Personal/Bank [uuid:"))
-        .stdout(predicate::str::contains("  Title: Bank (protected)\n"));
+        .stdout(predicate::str::contains("ENTRY \"/Personal/Bank\" [uuid:"))
+        .stdout(predicate::str::contains("  Title: \"Bank\" (protected)\n"));
 }
 
 /// Multi-line Notes that imitate structural lines cannot forge one, in the
@@ -399,7 +399,7 @@ fn protection_toggle_is_reported() {
         "{out}"
     );
     assert!(
-        out.contains("  ~ otp: <sealed:") && out.contains("-> otpauth://totp/Email?secret="),
+        out.contains("  ~ \"otp\": <sealed:") && out.contains("-> \"otpauth://totp/Email?secret="),
         "{out}"
     );
 }
@@ -408,7 +408,7 @@ fn protection_toggle_is_reported() {
 fn override_url_is_reported() {
     let (_, out) = pair("override_url", &[]);
     assert!(
-        out.contains("  + OverrideURL: cmd://firefox --private-window {URL}\n"),
+        out.contains("  + OverrideURL: \"cmd://firefox --private-window {URL}\"\n"),
         "{out}"
     );
 }
@@ -427,7 +427,7 @@ fn history_at_cap_is_one_removal_and_one_addition() {
                 || l.starts_with("  + History[2026-01-04T09:00:00Z].")),
         "{out}"
     );
-    assert!(out.contains("  + History[2026-01-04T09:00:00Z].URL: https://bank.example/v4\n"));
+    assert!(out.contains("  + History[2026-01-04T09:00:00Z].URL: \"https://bank.example/v4\"\n"));
 }
 
 /// A recycle-bin UUID naming the root does not hide the vault.
@@ -436,7 +436,7 @@ fn recycle_bin_naming_the_root_hides_nothing() {
     let (code, out) = pair("recycle_bin_root", &[]);
     assert_eq!(code, 1);
     assert!(
-        out.contains("~ ENTRY /Personal/Bank\n  ~ UserName: alice -> bob\n"),
+        out.contains("~ ENTRY \"/Personal/Bank\"\n  ~ UserName: \"alice\" -> \"bob\"\n"),
         "{out}"
     );
 }
@@ -446,10 +446,10 @@ fn recycle_bin_naming_the_root_hides_nothing() {
 #[test]
 fn trashing_an_entry() {
     let (_, out) = pair("trash_entry", &[]);
-    assert!(out.contains("- ENTRY /Personal/Email\n"), "{out}");
+    assert!(out.contains("- ENTRY \"/Personal/Email\"\n"), "{out}");
     let (_, out) = pair("trash_entry", &["--include-recycle-bin"]);
     assert!(
-        out.contains("~ ENTRY /Recycle Bin/Email (moved from /Personal/Email)\n"),
+        out.contains("~ ENTRY \"/Recycle Bin/Email\" (moved from \"/Personal/Email\")\n"),
         "{out}"
     );
 }
@@ -500,7 +500,7 @@ fn keyfile_only_vault_opens_with_its_key_file() {
         .args(["--key-file", kf, "--textconv", vault])
         .assert()
         .success()
-        .stdout(predicate::str::contains("ENTRY /Personal/Bank [uuid:"));
+        .stdout(predicate::str::contains("ENTRY \"/Personal/Bank\" [uuid:"));
     Command::cargo_bin("diff-kdbx")
         .unwrap()
         .env("KDBX_DIFF_PASSWORD", PW)

@@ -1,9 +1,16 @@
 //! Text forms of property values, shared by the dump and the text renderer.
 //!
-//! Every user-controlled string passes through `kdbx_core::text`: single-line
-//! values through `escape_inline`, multi-line values through
-//! `continuation_lines`, so no value can forge a structural output line.
+//! The grammar: closed-set names and value kinds (numbers, times, UUIDs,
+//! colors, `<sealed:...>`, enum names) are bare; every vault-controlled
+//! string printed next to renderer syntax (a plain single-line value, a node
+//! path; labels quote their own vault parts, see `Property`'s `Display`) is
+//! one `kdbx_core::text::quote` token; a multi-line value is printed as
+//! `continuation_lines`, whose content cannot be mistaken for anything else.
+//! So no value can forge a structural line, another property, a sealed value,
+//! a protection marker or a ` -> `.
 
+#[cfg(test)]
+mod grammar_tests;
 pub(crate) mod json;
 pub(crate) mod text;
 
@@ -11,7 +18,7 @@ use std::fmt::Write as _;
 
 use kdbx_core::model::{AutoTypeObfuscation, Compression, Icon, InnerCipher, OuterCipher, Value};
 use kdbx_core::path::VaultPath;
-use kdbx_core::text::{continuation_lines, escape_inline};
+use kdbx_core::text::{continuation_lines, quote};
 use uuid::Uuid;
 
 use crate::properties::{KdfKind, Property, Shown};
@@ -51,7 +58,7 @@ impl<'a> ValueText<'a> {
                 bare,
             },
             Some(s) => ValueText {
-                inline: join(&escape_inline(s), marker),
+                inline: join(&quote(s), marker),
                 block: None,
                 bare,
             },
@@ -96,10 +103,10 @@ fn join(text: &str, marker: Option<&str>) -> String {
 /// The single-line text form of a value.
 pub(crate) fn inline(value: &Shown) -> String {
     match value {
-        Shown::Text(s) => escape_inline(s).into_owned(),
+        Shown::Text(s) => quote(s),
         Shown::Sealed(fp) => sealed(fp),
         Shown::Field { protected, value } => match value {
-            Value::Plain(s) => join(&escape_inline(s), protected.then_some("(protected)")),
+            Value::Plain(s) => join(&quote(s), protected.then_some("(protected)")),
             Value::Sealed(fp) => join(&sealed(fp), (!protected).then_some("(unprotected)")),
             _ => "<unrecognized>".to_owned(),
         },
@@ -170,11 +177,17 @@ fn sealed(fp: &kdbx_core::fingerprint::Fingerprint) -> String {
     format!("<sealed:{}>", fp.short())
 }
 
-/// A node's address: its path (already escaped by the path grammar) and its
-/// UUID, or the UUID alone for a node without a path.
+/// A node's path as one quoted token (a path holds vault names, so it is
+/// quoted like any vault string; unquote, then `VaultPath::parse`).
+pub(crate) fn path_token(path: &VaultPath) -> String {
+    quote(&path.format())
+}
+
+/// A node's address in the dump: its path token and its UUID, or the UUID
+/// alone for a node without a path.
 pub(crate) fn address(path: Option<&VaultPath>, uuid: Uuid) -> String {
     match path {
-        Some(p) => format!("{} [uuid:{uuid}]", p.format()),
+        Some(p) => format!("{} [uuid:{uuid}]", path_token(p)),
         None => format!("(no path) [uuid:{uuid}]"),
     }
 }

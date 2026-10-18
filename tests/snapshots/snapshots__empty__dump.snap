@@ -12,7 +12,7 @@ DATABASE
   OuterCipher: AES-256
   InnerCipher: ChaCha20
   Compression: gzip
-GROUP / [uuid:00000001-d1ff-4000-8000-000000000000]
-  Name: Root
+GROUP "/" [uuid:00000001-d1ff-4000-8000-000000000000]
+  Name: "Root"
   CreationTime: 2026-01-01T09:00:00Z
   Expires: false

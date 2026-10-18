@@ -296,10 +296,10 @@ fn order_is_canonical() {
             "Password",
             "URL",
             "Notes",
-            "PIN",
-            "Tag[finance]",
-            "Tag[money]",
-            "Attachment[codes.txt]"
+            "\"PIN\"",
+            "Tag[\"finance\"]",
+            "Tag[\"money\"]",
+            "Attachment[\"codes.txt\"]"
         ]
     );
     let last = entry_properties(&entry).keys().last().unwrap().clone();
@@ -419,9 +419,9 @@ fn auto_type_associations_are_keyed_by_window_and_occurrence() {
     assert_eq!(
         labels,
         [
-            "AutoType.Association[Bank 1]",
-            "AutoType.Association[Bank 1#2]",
-            "AutoType.Association[Mail 1]"
+            "AutoType.Association[\"Bank 1\"]",
+            "AutoType.Association[\"Bank 1\"#2]",
+            "AutoType.Association[\"Mail 1\"]"
         ]
     );
 }
@@ -449,9 +449,9 @@ fn noise_is_a_property_of_the_key_never_of_a_name() {
 #[test]
 fn labels_are_single_printable_lines() {
     let p = Property::Tag("evil\n+ ENTRY /x".into());
-    assert_eq!(p.to_string(), "Tag[evil\\n+ ENTRY /x]");
+    assert_eq!(p.to_string(), "Tag[\"evil\\n+ ENTRY /x\"]");
     let f = Property::Field(FieldName::new("a\u{202E}b"));
-    assert_eq!(f.to_string(), "a\\u{202E}b");
+    assert_eq!(f.to_string(), "\"a\\u{202E}b\"");
     assert_eq!(
         Property::Meta(MetaKey::MemoryProtection(StandardField::Url)).to_string(),
         "ProtectURL"

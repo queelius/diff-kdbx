@@ -294,7 +294,7 @@ fn protection_toggle_on_an_unchanged_value_is_reported() {
         .fields
         .insert("otp".into(), sealed("otp", false, "otpauth://x"));
     let cs = compute(&a2, &b, &DiffOptions::default());
-    assert_eq!(changed(&cs, id(0x12)), ["otp"]);
+    assert_eq!(changed(&cs, id(0x12)), ["\"otp\""]);
     // A Password stays sealed either way; the flag alone still shows.
     let mut c = a.clone();
     edit(&mut c, id(0x11))
@@ -344,8 +344,8 @@ fn every_entry_property_kind_is_reported() {
     assert_eq!(
         changed(&cs, id(0x11)),
         [
-            "Tag[money]",
-            "Attachment[codes.txt]",
+            "Tag[\"money\"]",
+            "Attachment[\"codes.txt\"]",
             "OverrideURL",
             "QualityCheck",
             "Icon",
@@ -354,8 +354,8 @@ fn every_entry_property_kind_is_reported() {
             "AutoType.Enabled",
             "AutoType.DefaultSequence",
             "AutoType.DataTransferObfuscation",
-            "AutoType.Association[Bank*]",
-            "CustomData[KPXC_KEY]",
+            "AutoType.Association[\"Bank*\"]",
+            "CustomData[\"KPXC_KEY\"]",
         ]
     );
     let fg = props(&cs, id(0x11))
@@ -380,7 +380,7 @@ fn group_properties_are_reported() {
     let cs = compute(&a, &b, &DiffOptions::default());
     assert_eq!(
         changed(&cs, id(2)),
-        ["Notes", "Tag[home]", "Icon", "EnableSearching"]
+        ["Notes", "Tag[\"home\"]", "Icon", "EnableSearching"]
     );
 }
 
@@ -501,7 +501,7 @@ fn custom_field_named_like_a_timestamp_is_not_suppressed() {
         .fields
         .insert("UsageCount".into(), Field::plain("2"));
     let cs = compute(&a, &b, &DiffOptions::default());
-    assert_eq!(changed(&cs, id(0x11)), ["UsageCount"]);
+    assert_eq!(changed(&cs, id(0x11)), ["\"UsageCount\""]);
     assert_eq!(cs.summary.suppressed, 0);
 }
 

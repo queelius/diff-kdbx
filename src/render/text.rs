@@ -6,7 +6,7 @@ use kdbx_core::path::VaultPath;
 use kdbx_core::text::continuation_lines;
 use uuid::Uuid;
 
-use super::{CONTINUATION, ValueText, kdf_name};
+use super::{CONTINUATION, ValueText, kdf_name, path_token};
 use crate::change_set::{
     Change, ChangeSet, DiffWarning, KdfWeakening, NodeChange, NodeStatus, PropertyChange, Summary,
 };
@@ -99,7 +99,7 @@ fn warning(w: &DiffWarning) -> String {
 /// A node's address in the diff: its path, or its UUID when it has none.
 fn address(path: Option<&VaultPath>, uuid: Uuid) -> String {
     match path {
-        Some(p) => p.format(),
+        Some(p) => path_token(p),
         None => format!("(no path) [uuid:{uuid}]"),
     }
 }
@@ -119,7 +119,7 @@ fn record(keyword: &str, node: &NodeChange, out: &mut String) {
         } => {
             let _ = write!(out, "~ {keyword} {at}");
             if let Some(from) = moved_from {
-                let _ = write!(out, " (moved from {})", from.format());
+                let _ = write!(out, " (moved from {})", path_token(from));
             }
             out.push('\n');
             properties(changes, out);
@@ -274,26 +274,26 @@ mod tests {
         );
         assert_eq!(
             render_text(&cs, &TextOptions::default()),
-            "summary: entries +2/-1/~1 (1 moved), groups +0/-0/~1 (0 moved), properties 5, database 1, suppressed 0
+            r#"summary: entries +2/-1/~1 (1 moved), groups +0/-0/~1 (0 moved), properties 5, database 1, suppressed 0
 warning: KDBX version differs: 4.0 -> 4.1
 warning: KDF weakened: Argon2d replaced by AES-KDF, which is not memory-hard
 DATABASE
-  ~ DatabaseName: Old -> New
-~ GROUP /Office/
-  ~ Name: Work -> Office
-+ ENTRY /Office/GitHub
-- ENTRY /Personal/Email
-~ ENTRY /Personal/VPN (moved from /Office/VPN)
+  ~ DatabaseName: "Old" -> "New"
+~ GROUP "/Office/"
+  ~ Name: "Work" -> "Office"
++ ENTRY "/Office/GitHub"
+- ENTRY "/Personal/Email"
+~ ENTRY "/Personal/VPN" (moved from "/Office/VPN")
   ~ Password: <sealed:12121212> -> <sealed:34343434>
   ~ Notes:
       - | a
       - | b
       + | a
       + | c
-  + Tag[vpn]
-  - otp: <sealed:56565656>
+  + Tag["vpn"]
+  - "otp": <sealed:56565656>
 + ENTRY (no path) [uuid:00000000-0000-0000-0000-000000000015]
-"
+"#
         );
     }
 
@@ -331,36 +331,9 @@ DATABASE
             "{out}"
         );
         assert!(
-            out.contains("  ~ Title: Bank -> Bank (protected)\n"),
+            out.contains("  ~ Title: \"Bank\" -> \"Bank\" (protected)\n"),
             "{out}"
         );
-    }
-
-    #[test]
-    fn values_cannot_forge_structural_lines() {
-        let evil = "x\n+ ENTRY /forged\n~ GROUP /forged/";
-        let cs = ChangeSet::new(
-            vec![entry(
-                1,
-                "/x",
-                NodeStatus::Modified {
-                    moved_from: None,
-                    changes: vec![
-                        PropertyChange::new(field("Notes"), None, plain(evil)),
-                        PropertyChange::new(field(evil), plain(evil), plain("y")),
-                        PropertyChange::new(Property::Tag(evil.into()), Some(Shown::Present), None),
-                    ],
-                },
-            )],
-            vec![],
-            0,
-        );
-        let out = render_text(&cs, &TextOptions::default());
-        let structural: Vec<&str> = out
-            .lines()
-            .filter(|l| !l.starts_with(' ') && !l.starts_with("summary:"))
-            .collect();
-        assert_eq!(structural, ["~ ENTRY /x"], "{out}");
     }
 
     #[test]

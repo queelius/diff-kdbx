@@ -92,7 +92,7 @@ fn key_file_only_vault_opens_without_a_password() {
             .arg("--key-file")
             .arg(&kf),
     );
-    assert!(out.contains("ENTRY /Bank [uuid:"), "{out}");
+    assert!(out.contains("ENTRY \"/Bank\" [uuid:"), "{out}");
     // --no-password makes it explicit, even with a password in the
     // environment.
     let out = stdout(
@@ -274,7 +274,7 @@ fn show_secrets_reveals_and_warns_on_a_pipe() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "  Password: hunter2 (protected)\n",
+            "  Password: \"hunter2\" (protected)\n",
         ))
         .stderr(predicate::str::contains(
             "--show-secrets with non-TTY stdout",

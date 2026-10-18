@@ -1,9 +1,9 @@
 ---
 source: tests/snapshots.rs
-expression: render_text(&cs)
+expression: "render_text(&cs, &TextOptions::default())"
 ---
 summary: entries +0/-0/~2 (0 moved), groups +0/-0/~0 (0 moved), properties 2, database 0, suppressed 6
-~ ENTRY /Personal/Bank
+~ ENTRY "/Personal/Bank"
   ~ Password: <sealed:83b20c03> -> <sealed:83b20c03> (unprotected)
-~ ENTRY /Personal/Email
-  ~ otp: <sealed:af5c6854> -> otpauth://totp/Email?secret=JBSWY3DPEHPK3PXP
+~ ENTRY "/Personal/Email"
+  ~ "otp": <sealed:af5c6854> -> "otpauth://totp/Email?secret=JBSWY3DPEHPK3PXP"

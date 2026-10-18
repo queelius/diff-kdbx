@@ -33,7 +33,8 @@
 //! };
 //! let cs = compute(&vault("https://a.example"), &vault("https://b.example"), &DiffOptions::default());
 //! assert_eq!(cs.summary.entries_modified, 1);
-//! assert!(render_text(&cs, &Default::default()).contains("~ ENTRY /Bank\n  ~ URL: https://a.example -> https://b.example\n"));
+//! assert!(render_text(&cs, &Default::default())
+//!     .contains("~ ENTRY \"/Bank\"\n  ~ URL: \"https://a.example\" -> \"https://b.example\"\n"));
 //! ```
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
