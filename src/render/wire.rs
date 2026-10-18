@@ -15,7 +15,15 @@
 //! | color | `"#RRGGBB"` |
 //! | format version | `"major.minor"` |
 //! | key derivation parameters | `"argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes>"` |
-//! | enum names | `snake_case` strings spelled below |
+//! | enum value names | `snake_case` strings spelled below (`aes256`, `chacha20`, `use_clipboard`, ...); a value a newer kdbx-core adds is `"unrecognized"` |
+//!
+//! Property `kind`s and value `type`s are `snake_case`; property `key`s that
+//! name a typed KDBX setting keep the KDBX element name in PascalCase as the
+//! text format prints it (`RecycleBinUUID`, `LastModificationTime`,
+//! `ProtectPassword`, `ForegroundColor`). Counters are 0-based: a history
+//! item's `index` and an auto-type association's `occurrence` start at 0,
+//! while the text format's `#N` is 1-based (`#2` is index 1), matching the
+//! path grammar's 1-based `:N` ordinals.
 
 use chrono::DateTime;
 use kdbx_core::fingerprint::Fingerprint;
@@ -167,10 +175,8 @@ enum WireValue {
     },
     Field {
         protected: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        text: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        sealed: Option<String>,
+        #[serde(flatten)]
+        content: FieldContent,
     },
     Bool {
         value: bool,
@@ -191,10 +197,8 @@ enum WireValue {
         value: String,
     },
     Icon {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        standard: Option<u32>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        custom: Option<String>,
+        #[serde(flatten)]
+        content: IconContent,
     },
     Attachment {
         size: u64,
@@ -224,6 +228,26 @@ enum WireValue {
     Obfuscation {
         value: &'static str,
     },
+}
+
+/// A field value's content: `"text"`, `"sealed"`, or, for a value kind a
+/// newer kdbx-core adds, `"unrecognized": true`.
+#[derive(Serialize)]
+#[serde(untagged)]
+enum FieldContent {
+    Text { text: String },
+    Sealed { sealed: String },
+    Unrecognized { unrecognized: bool },
+}
+
+/// An icon: `"standard": N`, `"custom": "<uuid>"`, or, for an icon kind a
+/// newer kdbx-core adds, `"unrecognized": true`.
+#[derive(Serialize)]
+#[serde(untagged)]
+enum IconContent {
+    Standard { standard: u32 },
+    Custom { custom: String },
+    Unrecognized { unrecognized: bool },
 }
 
 #[derive(Serialize)]
@@ -416,18 +440,14 @@ fn value(v: &Shown) -> WireValue {
     match v {
         Shown::Text(s) => WireValue::Text { text: s.clone() },
         Shown::Sealed(fp) => WireValue::Sealed { sealed: hex(fp) },
-        Shown::Field { protected, value } => {
-            let (text, sealed) = match value {
-                Value::Plain(s) => (Some(s.clone()), None),
-                Value::Sealed(fp) => (None, Some(hex(fp))),
-                _ => (None, None),
-            };
-            WireValue::Field {
-                protected: *protected,
-                text,
-                sealed,
-            }
-        }
+        Shown::Field { protected, value } => WireValue::Field {
+            protected: *protected,
+            content: match value {
+                Value::Plain(s) => FieldContent::Text { text: s.clone() },
+                Value::Sealed(fp) => FieldContent::Sealed { sealed: hex(fp) },
+                _ => FieldContent::Unrecognized { unrecognized: true },
+            },
+        },
         Shown::Bool(b) => WireValue::Bool { value: *b },
         Shown::Int(n) => WireValue::Int { value: *n },
         Shown::Uint(n) => WireValue::Uint { value: *n },
@@ -436,18 +456,11 @@ fn value(v: &Shown) -> WireValue {
         },
         Shown::Uuid(u) => WireValue::Uuid { value: uuid(*u) },
         Shown::Color(c) => WireValue::Color { value: color(*c) },
-        Shown::Icon(icon) => match icon {
-            Icon::Standard(n) => WireValue::Icon {
-                standard: Some(*n),
-                custom: None,
-            },
-            Icon::Custom(u) => WireValue::Icon {
-                standard: None,
-                custom: Some(uuid(*u)),
-            },
-            _ => WireValue::Icon {
-                standard: None,
-                custom: None,
+        Shown::Icon(icon) => WireValue::Icon {
+            content: match icon {
+                Icon::Standard(n) => IconContent::Standard { standard: *n },
+                Icon::Custom(u) => IconContent::Custom { custom: uuid(*u) },
+                _ => IconContent::Unrecognized { unrecognized: true },
             },
         },
         Shown::Attachment {

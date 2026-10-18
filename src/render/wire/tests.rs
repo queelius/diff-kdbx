@@ -321,3 +321,25 @@ fn document_envelope() {
     );
     assert_eq!(doc(&ChangeSet::default())["fingerprint_key"], Json::Null);
 }
+
+/// A field value or icon kind a future kdbx-core adds is marked, never an
+/// empty object.
+#[test]
+fn unknown_value_kinds_are_marked_unrecognized() {
+    use super::{FieldContent, IconContent, WireValue};
+    let field = WireValue::Field {
+        protected: true,
+        content: FieldContent::Unrecognized { unrecognized: true },
+    };
+    assert_eq!(
+        serde_json::to_value(field).unwrap(),
+        json!({"type": "field", "protected": true, "unrecognized": true})
+    );
+    let icon = WireValue::Icon {
+        content: IconContent::Unrecognized { unrecognized: true },
+    };
+    assert_eq!(
+        serde_json::to_value(icon).unwrap(),
+        json!({"type": "icon", "unrecognized": true})
+    );
+}
