@@ -1,8 +1,8 @@
 //! ChangeSet and friends: structured representation of a diff between two
 //! KDBX databases.
 
-use crate::mask::HashPrefix;
-use crate::path::Path;
+use crate::legacy::mask::HashPrefix;
+use crate::legacy::path::Path;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

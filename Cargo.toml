@@ -1,8 +1,9 @@
 [package]
 name = "diff-kdbx"
 description = "Semantic diff for KeePass KDBX files"
-version = "0.2.0"
+version = "0.1.0"
 edition = "2024"
+# keepass 0.15 (the CLI's file reader) requires 1.89.
 rust-version = "1.89"
 authors = ["Alexander Towell <lex@metafunctor.com>"]
 license = "MIT"
@@ -13,22 +14,38 @@ keywords = ["keepass", "kdbx", "diff", "git"]
 categories = ["command-line-utilities", "cryptography"]
 
 [dependencies]
-keepass = { version = "0.15.3", features = ["save_kdbx4"] }
-sha2 = "0.10"
-chrono = { version = "0.4", default-features = false }
+# The vault model and the ecosystem's shared rules. No keepass, no KDF by
+# default: the library is a pure function of two snapshots.
+kdbx-core = { path = "../kdbx-core", version = "0.1.0", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-uuid = { version = "1", features = ["v4", "serde"] }
-unicode-normalization = "0.1"
+uuid = { version = "1", default-features = false, features = ["std", "serde"] }
 
-# CLI-only dependencies
+# CLI-only dependencies.
 clap = { version = "4", features = ["derive"], optional = true }
 anyhow = { version = "1", optional = true }
 rpassword = { version = "7", optional = true }
+# The CLI opens files with keepass 0.15 (reads KDBX 3.1, 4.0 and 4.1).
+keepass = { version = "0.15.3", default-features = false, optional = true }
+# Transitional: the keepass-typed engine in src/legacy (removed when the CLI is
+# ported to the snapshot API).
+sha2 = { version = "0.10", optional = true }
+chrono = { version = "0.4", default-features = false, optional = true }
+unicode-normalization = { version = "0.1", optional = true }
 
 [features]
 default = []
-cli = ["dep:clap", "dep:anyhow", "dep:rpassword"]
+cli = [
+    "dep:clap",
+    "dep:anyhow",
+    "dep:rpassword",
+    "dep:keepass",
+    "kdbx-core/keepass-0_15",
+    "kdbx-core/kdf",
+    "dep:sha2",
+    "dep:chrono",
+    "dep:unicode-normalization",
+]
 
 [dev-dependencies]
 insta = "1"
@@ -36,12 +53,20 @@ proptest = "1"
 assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
+# examples/gen_fixtures.rs builds and saves the fixture vaults.
+anyhow = "1"
+chrono = { version = "0.4", default-features = false }
+keepass = { version = "0.15.3", features = ["save_kdbx4"] }
 
 [[bin]]
 name = "diff-kdbx"
 required-features = ["cli"]
 
-[[bin]]
-name = "gen-fixtures"
-path = "src/bin/gen_fixtures.rs"
-required-features = ["cli"]
+# Argon2 (fingerprint key derivation, and keepass's own KDF) is unbearably
+# slow without optimization, and the CLI tests open many vaults.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+[profile.dev.package.rust-argon2]
+opt-level = 3

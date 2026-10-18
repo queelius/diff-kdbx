@@ -3,10 +3,10 @@
 //! The dump format must be deterministic and produce localized changes for localized edits.
 //! Each line is independently diffable. Indentation is 2 spaces.
 
-use crate::change_set::ValueDisplay;
-use crate::compute::{NodeKind, tree_walk};
-use crate::options::{DiffOptions, DumpOptions};
-use crate::path::Path;
+use crate::legacy::change_set::ValueDisplay;
+use crate::legacy::compute::{NodeKind, tree_walk};
+use crate::legacy::options::{DiffOptions, DumpOptions};
+use crate::legacy::path::Path;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use uuid::Uuid;
@@ -158,7 +158,7 @@ fn dump_entry(
     // returns a BTreeMap, so already ordered). Emitting only a count hid edits
     // that swap or rename an attachment while keeping the count constant. The
     // hash is the same 8-char SHA-256 prefix used for masked field values.
-    let attachments = crate::compute::collect_attachments(er);
+    let attachments = crate::legacy::compute::collect_attachments(er);
     for (name, hash) in &attachments {
         let _ = writeln!(out, "  attachment {}: <hash:{}>", name, hash);
     }

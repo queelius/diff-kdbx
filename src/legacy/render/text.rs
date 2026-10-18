@@ -1,10 +1,10 @@
 //! Tree-shaped text rendering of a ChangeSet.
 
-use crate::change_set::{
+use crate::legacy::change_set::{
     Change, ChangeSet, DatabaseChange, EntryChangeKind, FieldChange, GroupChangeKind, Summary,
     ValueChange, ValueDisplay,
 };
-use crate::options::RenderOptions;
+use crate::legacy::options::RenderOptions;
 use std::fmt::Write as _;
 
 pub fn render(cs: &ChangeSet, _opts: &RenderOptions) -> String {
@@ -36,8 +36,8 @@ fn render_summary(s: &Summary, out: &mut String) {
     );
 }
 
-fn render_warnings(warnings: &[crate::change_set::DiffWarning], out: &mut String) {
-    use crate::change_set::DiffWarning;
+fn render_warnings(warnings: &[crate::legacy::change_set::DiffWarning], out: &mut String) {
+    use crate::legacy::change_set::DiffWarning;
     for w in warnings {
         let _ = match w {
             DiffWarning::VersionMismatch { a, b } => {
@@ -97,7 +97,7 @@ fn render_database(d: &DatabaseChange, out: &mut String) {
     }
 }
 
-fn render_group(path: &crate::path::Path, kind: &GroupChangeKind, out: &mut String) {
+fn render_group(path: &crate::legacy::path::Path, kind: &GroupChangeKind, out: &mut String) {
     match kind {
         GroupChangeKind::Added => {
             let _ = writeln!(out, "+ GROUP {}", path.display);
@@ -124,7 +124,7 @@ fn render_group(path: &crate::path::Path, kind: &GroupChangeKind, out: &mut Stri
     }
 }
 
-fn render_entry(path: &crate::path::Path, kind: &EntryChangeKind, out: &mut String) {
+fn render_entry(path: &crate::legacy::path::Path, kind: &EntryChangeKind, out: &mut String) {
     match kind {
         EntryChangeKind::Added => {
             let _ = writeln!(out, "+ ENTRY {}", path.display);
@@ -215,7 +215,7 @@ fn fmt_value_change(c: &ValueChange) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::change_set::{Change, DatabaseChange};
+    use crate::legacy::change_set::{Change, DatabaseChange};
 
     #[test]
     fn empty_change_set_renders_no_changes_line() {
@@ -270,7 +270,7 @@ mod test {
         let cs = ChangeSet {
             changes: vec![Change::Entry {
                 uuid: uuid::Uuid::nil(),
-                path: crate::path::Path {
+                path: crate::legacy::path::Path {
                     display: "/test".into(),
                     uuids: vec![],
                 },

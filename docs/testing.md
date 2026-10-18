@@ -89,7 +89,7 @@ is documented in `tests/fixtures/MANIFEST.md` with:
 Synthetic fixtures regenerate via:
 
 ```bash
-cargo run --features cli --bin gen-fixtures
+cargo run --example gen_fixtures
 ```
 
 This produces deterministic content (modulo upstream `keepass-rs` limitations

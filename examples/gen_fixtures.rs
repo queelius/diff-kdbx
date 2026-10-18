@@ -1,7 +1,7 @@
 //! Generates the canonical `.kdbx` fixture pairs for the integration tests.
 //!
 //! Run with:
-//!   cargo run --features cli --bin gen-fixtures
+//!   cargo run --example gen_fixtures
 //!
 //! Each fixture is a directory `tests/fixtures/<name>/` holding `before.kdbx`
 //! and `after.kdbx`. Master password for all of them: `test-password-do-not-use`.
@@ -27,7 +27,8 @@ use keepass::{Database, DatabaseKey};
 use uuid::Uuid;
 
 const MASTER: &str = "test-password-do-not-use";
-const FIXTURES_ROOT: &str = "tests/fixtures";
+/// Fixtures live in the crate, wherever the example is run from.
+const FIXTURES_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures");
 
 // Fixed identities, `0000000n-d1ff-4000-8000-000000000000`. The varying part
 // leads, because the dump's short tag is a UUID's first 8 hex digits and must

@@ -1,7 +1,7 @@
 //! Diff computation: walk two KDBX databases and produce a structural ChangeSet.
 
-use crate::options::DiffOptions;
-use crate::path::Path;
+use crate::legacy::options::DiffOptions;
+use crate::legacy::path::Path;
 use keepass::db::GroupRef;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -114,7 +114,7 @@ fn build_path(name_stack: &[String], uuid_stack: &[Uuid]) -> Path {
     Path::from_segments(&segments, uuid_stack.to_vec())
 }
 
-use crate::change_set::{Change, ChangeSet, EntryChangeKind, GroupChangeKind};
+use crate::legacy::change_set::{Change, ChangeSet, EntryChangeKind, GroupChangeKind};
 
 /// Classification of one node's presence between two databases.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -254,7 +254,11 @@ fn structure_change(uuid: Uuid, node: &LocatedNode, ev: StructEvent) -> Change {
     }
 }
 
-fn count_structural(s: &mut crate::change_set::Summary, node: &LocatedNode, ev: StructEvent) {
+fn count_structural(
+    s: &mut crate::legacy::change_set::Summary,
+    node: &LocatedNode,
+    ev: StructEvent,
+) {
     match (&node.kind, ev) {
         (NodeKind::Group, StructEvent::Added) => s.groups_added += 1,
         (NodeKind::Group, StructEvent::Removed) => s.groups_removed += 1,
@@ -265,7 +269,7 @@ fn count_structural(s: &mut crate::change_set::Summary, node: &LocatedNode, ev: 
     }
 }
 
-use crate::change_set::{FieldChange, TimeField, ValueChange, ValueDisplay};
+use crate::legacy::change_set::{FieldChange, TimeField, ValueChange, ValueDisplay};
 
 /// Compute field-level changes between two matched entries.
 /// Returns an empty Vec if there are no differences in user-visible fields.
@@ -382,7 +386,7 @@ fn diff_tags(a: &keepass::db::Entry, b: &keepass::db::Entry, out: &mut Vec<Field
     }
 }
 
-use crate::mask::HashPrefix;
+use crate::legacy::mask::HashPrefix;
 
 /// Diff the attachments of two entries, appending `AttachmentAdded`, `AttachmentRemoved`, and
 /// `AttachmentModified` changes to `out`.
@@ -512,14 +516,14 @@ fn is_suppressible(fc: &FieldChange) -> bool {
     matches!(fc, FieldChange::TimeChanged { field, .. } if field.is_noise())
 }
 
-use crate::change_set::{DatabaseChange, DiffWarning};
+use crate::legacy::change_set::{DatabaseChange, DiffWarning};
 
 /// Top-level diff entry point.
 ///
 /// Produces a complete [`ChangeSet`] by:
 /// 1. Emitting a [`DiffWarning::VersionMismatch`] when the two databases use
 ///    different KDBX format versions.
-/// 2. Diffing database-level metadata (name, etc.) via [`diff_database_metadata`].
+/// 2. Diffing database-level metadata (name, etc.) via `diff_database_metadata`.
 /// 3. Walking both trees with [`tree_walk`] and emitting structural changes
 ///    (added/removed/moved groups and entries) via [`symmetric_diff`].
 /// 4. For each entry present in both databases at the same path, comparing
@@ -1034,8 +1038,8 @@ mod test {
 
     #[test]
     fn compute_no_entry_modifications_when_entries_differ_by_uuid() {
-        // When entries have different UUIDs, they are seen as add/remove — not
-        // Modified — so entries_modified stays 0.
+        // When entries have different UUIDs, they are seen as add/remove: not
+        // Modified: so entries_modified stays 0.
         let mut a = empty_db();
         let mut b = empty_db();
 
@@ -1217,7 +1221,7 @@ mod test {
         assert!(
             fields.iter().any(|f| matches!(
                 f,
-                crate::change_set::FieldChange::Modified { name, .. } if name == "Title"
+                crate::legacy::change_set::FieldChange::Modified { name, .. } if name == "Title"
             )),
             "the Title change must be reported"
         );
@@ -1275,7 +1279,7 @@ mod test {
         assert!(
             fields.iter().any(|f| matches!(
                 f,
-                crate::change_set::FieldChange::Modified { name, .. } if name == "Password"
+                crate::legacy::change_set::FieldChange::Modified { name, .. } if name == "Password"
             )),
             "the Password change must survive the move"
         );

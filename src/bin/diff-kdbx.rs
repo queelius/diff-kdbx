@@ -202,13 +202,13 @@ fn run_textconv(cli: Cli) -> anyhow::Result<u8> {
     let db_key = key::build_db_key(&rk)?;
     let mut file = std::fs::File::open(path)?;
     let db = keepass::Database::open(&mut file, db_key)?;
-    let opts = diff_kdbx::options::DumpOptions {
+    let opts = diff_kdbx::legacy::options::DumpOptions {
         strict: cli.strict,
         show_secrets: cli.show_secrets,
         include_recycle_bin: cli.include_recycle_bin,
     };
     warn_show_secrets_non_tty(cli.show_secrets);
-    let s = diff_kdbx::dump::dump(&db, &opts);
+    let s = diff_kdbx::legacy::dump::dump(&db, &opts);
     // Buffer-then-write so stdout stays all-or-nothing.
     write_stdout(s.as_bytes())?;
     Ok(0)
@@ -225,13 +225,13 @@ fn run_dump(cli: Cli) -> anyhow::Result<u8> {
     let db_key = key::build_db_key(&rk)?;
     let mut file = std::fs::File::open(path)?;
     let db = keepass::Database::open(&mut file, db_key)?;
-    let opts = diff_kdbx::options::DumpOptions {
+    let opts = diff_kdbx::legacy::options::DumpOptions {
         strict: cli.strict,
         show_secrets: cli.show_secrets,
         include_recycle_bin: cli.include_recycle_bin,
     };
     warn_show_secrets_non_tty(cli.show_secrets);
-    let s = diff_kdbx::dump::dump(&db, &opts);
+    let s = diff_kdbx::legacy::dump::dump(&db, &opts);
     write_stdout(s.as_bytes())?;
     Ok(0)
 }
@@ -271,17 +271,17 @@ fn run_standalone(cli: Cli) -> anyhow::Result<u8> {
 
     warn_show_secrets_non_tty(cli.show_secrets);
 
-    let opts = diff_kdbx::options::DiffOptions {
+    let opts = diff_kdbx::legacy::options::DiffOptions {
         strict: cli.strict,
         show_secrets: cli.show_secrets,
         include_recycle_bin: cli.include_recycle_bin,
     };
-    let cs = diff_kdbx::compute::compute(&db_a, &db_b, &opts);
+    let cs = diff_kdbx::legacy::compute::compute(&db_a, &db_b, &opts);
 
-    let render_opts = diff_kdbx::options::RenderOptions { color: cli.color };
+    let render_opts = diff_kdbx::legacy::options::RenderOptions { color: cli.color };
     let out = match cli.format {
-        Format::Text => diff_kdbx::render::text::render(&cs, &render_opts),
-        Format::Json => diff_kdbx::render::json::render(&cs),
+        Format::Text => diff_kdbx::legacy::render::text::render(&cs, &render_opts),
+        Format::Json => diff_kdbx::legacy::render::json::render(&cs),
     };
     write_stdout(out.as_bytes())?;
 

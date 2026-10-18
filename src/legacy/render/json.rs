@@ -1,6 +1,6 @@
 //! JSON rendering of a ChangeSet via serde.
 
-use crate::change_set::ChangeSet;
+use crate::legacy::change_set::ChangeSet;
 
 pub fn render(cs: &ChangeSet) -> String {
     serde_json::to_string_pretty(cs).expect("ChangeSet must always serialize")
@@ -9,7 +9,7 @@ pub fn render(cs: &ChangeSet) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::change_set::{Change, DatabaseChange};
+    use crate::legacy::change_set::{Change, DatabaseChange};
 
     #[test]
     fn empty_change_set_serializes() {

@@ -9,8 +9,8 @@ password**, **contents**, and **regeneration**.
 
 - **Master password (every fixture):** `test-password-do-not-use`. It is
   published; never put anything resembling real data in these files.
-- **Generator:** `cargo run --features cli --bin gen-fixtures` rewrites every
-  synthetic pair in one shot (`src/bin/gen_fixtures.rs`).
+- **Generator:** `cargo run --example gen_fixtures` rewrites every
+  synthetic pair in one shot (`examples/gen_fixtures.rs`).
 - **Reproducible content.** Every group and entry has a fixed UUID of the form
   `0000000n-d1ff-4000-8000-000000000000`, and every timestamp is fixed, so
   regenerating yields identical vault content and identical `--textconv` dumps.
@@ -79,7 +79,7 @@ Consumers: `integration.rs::legacy_kdbx40_is_readable` (4.0 read coverage) and
 
 ## Adding a fixture
 
-Add a `pair(...)` call in `src/bin/gen_fixtures.rs` with fixed IDs (extend the
+Add a `pair(...)` call in `examples/gen_fixtures.rs` with fixed IDs (extend the
 `id(n)` constants), regenerate, add an integration test, and add a row above.
 Prefer a clone-plus-one-edit pair so the fixture isolates one behavior.
 
