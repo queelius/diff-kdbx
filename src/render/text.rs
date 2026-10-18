@@ -175,6 +175,16 @@ fn render_field(f: &FieldChange, out: &mut String) {
         FieldChange::HistoryRewritten { from_len, to_len } => {
             let _ = writeln!(out, "  H history rewritten: {} -> {}", from_len, to_len);
         }
+        FieldChange::TimeChanged { field, from, to } => {
+            let show = |v: &Option<String>| v.as_deref().unwrap_or("(none)").to_owned();
+            let _ = writeln!(
+                out,
+                "  ~ {}: {} -> {}",
+                field.kdbx_name(),
+                show(from),
+                show(to)
+            );
+        }
     }
 }
 
