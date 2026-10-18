@@ -13,6 +13,7 @@
 mod grammar_tests;
 pub(crate) mod json;
 pub(crate) mod text;
+mod wire;
 
 use std::fmt::Write as _;
 

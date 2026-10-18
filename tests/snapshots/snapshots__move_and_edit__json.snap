@@ -20,21 +20,13 @@ expression: "render_json(&cs, &JsonOptions::default())"
           },
           "before": {
             "type": "field",
-            "value": {
-              "protected": false,
-              "value": {
-                "plain": "https://vpn.example"
-              }
-            }
+            "protected": false,
+            "text": "https://vpn.example"
           },
           "after": {
             "type": "field",
-            "value": {
-              "protected": false,
-              "value": {
-                "plain": "https://vpn2.example"
-              }
-            }
+            "protected": false,
+            "text": "https://vpn2.example"
           }
         }
       ]

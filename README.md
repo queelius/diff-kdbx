@@ -200,7 +200,9 @@ recognized KDF replaced by an unrecognized one).
 
 ## The JSON contract
 
-`--format=json` (and `render_json` in the library) emits one document:
+`--format=json` (and `render_json` in the library, the only way to get JSON:
+the public types do not implement `Serialize`) emits one document whose
+shape diff-kdbx defines itself, leaf by leaf:
 
 ```json
 {
@@ -219,8 +221,8 @@ recognized KDF replaced by an unrecognized one).
       "changes": [
         {
           "property": {"kind": "field", "key": "Password"},
-          "before": {"type": "field", "value": {"protected": true, "value": {"sealed": "96ea7ab3...42ac"}}},
-          "after": {"type": "field", "value": {"protected": true, "value": {"sealed": "8422c055...2e88"}}}
+          "before": {"type": "field", "protected": true, "sealed": "96ea7ab3...42ac"},
+          "after": {"type": "field", "protected": true, "sealed": "8422c055...2e88"}
         }
       ]
     }
@@ -234,26 +236,43 @@ recognized KDF replaced by an unrecognized one).
 
 (Fingerprints are abbreviated here; the output has all 64 hex characters.)
 
-- `changes[]` is ordered: the database record (`"scope": "database"`, with
-  `changes`), then groups, then entries, each by path and then UUID. A node
-  record has `uuid`, `path` (`null` for a node without a path, such as an
-  entry with an empty title), and `status`: `added`, `removed`, or `modified`
-  with `moved_from` and `changes`.
-- A property is `{"kind", "key"}`: `field` (key: the field name), `tag`,
-  `attachment`, `time` (key: the KDBX element name, such as `UsageCount`),
-  `meta` (`DatabaseName`, `ProtectPassword`, ...), `header` (`Kdf`,
-  `KdfMemory`, ...), `custom_data`, `history` (key: `{"item": {"modified",
-  "index"}, "property": {...}}`), and the rest listed in the rustdoc of
-  `Property`.
-- A value is `{"type", "value"}`: `text`, `sealed` (64 hex), `field`
-  (`{"protected", "value": {"plain": ...} | {"sealed": ...}}`), `bool`,
-  `int`, `uint`, `time` (`YYYY-MM-DDTHH:MM:SSZ`), `uuid`, `color`
-  (`#RRGGBB`), `icon`, `attachment`, `blob`, `present`, `format`, `kdf`,
-  `outer_cipher`, `inner_cipher`, `compression`, `obfuscation`. A missing side
-  of a change is `null`.
+- `changes[]` is ordered: the database record (`{"scope": "database",
+  "changes": [...]}`), then groups, then entries, each by path and then UUID.
+  A node record has `uuid`, `path` (`null` for a node without a path), and
+  `status`: `added`, `removed`, or `modified` with `moved_from` and `changes`.
+- A property is `{"kind", ...}`: `{"kind": "field", "key": "<name>"}` (the
+  same for `tag`, `attachment`, `custom_data`, `custom_data_modified`,
+  `public_custom_data`; `time`, `meta`, `header`, `color`, `auto_type`,
+  `group_flag` with their KDBX names as `key`; `custom_icon`,
+  `custom_icon_name`, `custom_icon_modified`, `deleted_object` with a UUID),
+  `{"kind": "auto_type_association", "window", "occurrence"}`,
+  `{"kind": "history", "modified": "<time>" | null, "index", "property": {...}}`,
+  or a bare kind (`name`, `format`, `notes`, `override_url`, `quality_check`,
+  `icon`, `previous_parent`).
+- A value is `{"type", ...}`:
+  `{"type": "field", "protected": bool, "text": "..."}` or
+  `{"type": "field", "protected": bool, "sealed": "<64 hex>"}`,
+  `{"type": "text", "text": "..."}`, `{"type": "sealed", "sealed": "<64 hex>"}`,
+  `{"type": "attachment", "size", "sealed", "protected"}`,
+  `{"type": "blob", "size", "sealed"}`,
+  `{"type": "icon", "standard": N}` or `{"type": "icon", "custom": "<uuid>"}`,
+  `{"type": "present"}`, and `{"type": T, "value": V}` for `bool`, `int`,
+  `uint`, `time` (`"YYYY-MM-DDTHH:MM:SSZ"`), `uuid`, `color` (`"#RRGGBB"`),
+  `format` (`"4.1"`), `kdf` (`aes_kdf`, `argon2d`, `argon2id`), `outer_cipher`
+  (`aes256`, `twofish`, `chacha20`), `inner_cipher` (`plain`, `salsa20`,
+  `chacha20`), `compression` (`none`, `gzip`) and `obfuscation` (`none`,
+  `use_clipboard`); an enum value a newer KDBX writer adds is
+  `"unrecognized"`. A missing side of a change is `null`.
+- Warnings: `{"kind": "version_mismatch", "before": "4.0", "after": "4.1"}`
+  and `{"kind": "kdf_weakened", "aspect": "memory_lowered" |
+  "iterations_lowered" | "rounds_lowered", "before": N, "after": N}`,
+  `{"kind": "kdf_weakened", "aspect": "no_longer_memory_hard", "before":
+  "<kdf>", "after": "<kdf>"}`, `{"kind": "kdf_weakened", "aspect":
+  "unrecognized", "before": "<kdf>"}`.
 - `fingerprint_key` records how the fingerprint key was derived (Argon2id
   parameters and salt), so anyone holding the vault can reproduce every
-  fingerprint; it is `null` when the key was not derived from a vault.
+  fingerprint (see `diff-kdbx fingerprint --params --salt`); it is `null`
+  when the key was not derived from a vault.
 - Breaking any of this bumps `format_version`. Snapshot tests pin the shape
   for every fixture pair.
 

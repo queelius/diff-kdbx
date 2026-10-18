@@ -20,21 +20,13 @@ expression: "render_json(&cs, &JsonOptions::default())"
           },
           "before": {
             "type": "field",
-            "value": {
-              "protected": true,
-              "value": {
-                "sealed": "af5c6854af6060524afb88904839e63f2162d3c6922cde2ea9eea9bc695193b8"
-              }
-            }
+            "protected": true,
+            "sealed": "af5c6854af6060524afb88904839e63f2162d3c6922cde2ea9eea9bc695193b8"
           },
           "after": {
             "type": "field",
-            "value": {
-              "protected": true,
-              "value": {
-                "sealed": "e470a942a78445b0b92b76d2c7f87eb4f98fd5207c4e13755973834cd22ba008"
-              }
-            }
+            "protected": true,
+            "sealed": "e470a942a78445b0b92b76d2c7f87eb4f98fd5207c4e13755973834cd22ba008"
           }
         }
       ]

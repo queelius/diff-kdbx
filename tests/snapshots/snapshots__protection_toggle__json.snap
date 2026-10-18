@@ -20,21 +20,13 @@ expression: "render_json(&cs, &JsonOptions::default())"
           },
           "before": {
             "type": "field",
-            "value": {
-              "protected": true,
-              "value": {
-                "sealed": "83b20c03773abb3999a1d9c2b26caa8130dad3f06fbad82c1dfc09eac7685729"
-              }
-            }
+            "protected": true,
+            "sealed": "83b20c03773abb3999a1d9c2b26caa8130dad3f06fbad82c1dfc09eac7685729"
           },
           "after": {
             "type": "field",
-            "value": {
-              "protected": false,
-              "value": {
-                "sealed": "83b20c03773abb3999a1d9c2b26caa8130dad3f06fbad82c1dfc09eac7685729"
-              }
-            }
+            "protected": false,
+            "sealed": "83b20c03773abb3999a1d9c2b26caa8130dad3f06fbad82c1dfc09eac7685729"
           }
         }
       ]
@@ -53,21 +45,13 @@ expression: "render_json(&cs, &JsonOptions::default())"
           },
           "before": {
             "type": "field",
-            "value": {
-              "protected": true,
-              "value": {
-                "sealed": "af5c6854af6060524afb88904839e63f2162d3c6922cde2ea9eea9bc695193b8"
-              }
-            }
+            "protected": true,
+            "sealed": "af5c6854af6060524afb88904839e63f2162d3c6922cde2ea9eea9bc695193b8"
           },
           "after": {
             "type": "field",
-            "value": {
-              "protected": false,
-              "value": {
-                "plain": "otpauth://totp/Email?secret=JBSWY3DPEHPK3PXP"
-              }
-            }
+            "protected": false,
+            "text": "otpauth://totp/Email?secret=JBSWY3DPEHPK3PXP"
           }
         }
       ]

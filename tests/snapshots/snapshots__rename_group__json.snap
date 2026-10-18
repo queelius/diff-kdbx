@@ -19,11 +19,11 @@ expression: "render_json(&cs, &JsonOptions::default())"
           },
           "before": {
             "type": "text",
-            "value": "Work"
+            "text": "Work"
           },
           "after": {
             "type": "text",
-            "value": "Office"
+            "text": "Office"
           }
         }
       ]

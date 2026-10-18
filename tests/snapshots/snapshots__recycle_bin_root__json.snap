@@ -20,21 +20,13 @@ expression: "render_json(&cs, &JsonOptions::default())"
           },
           "before": {
             "type": "field",
-            "value": {
-              "protected": false,
-              "value": {
-                "plain": "alice"
-              }
-            }
+            "protected": false,
+            "text": "alice"
           },
           "after": {
             "type": "field",
-            "value": {
-              "protected": false,
-              "value": {
-                "plain": "bob"
-              }
-            }
+            "protected": false,
+            "text": "bob"
           }
         }
       ]

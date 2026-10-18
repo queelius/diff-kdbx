@@ -1,10 +1,10 @@
 //! The machine-readable rendering of a change set: a versioned JSON contract.
 
 use kdbx_core::fingerprint::DeriveParams;
-use serde::Serialize;
 use uuid::Uuid;
 
-use crate::change_set::{Change, ChangeSet, DiffWarning, Summary};
+use super::wire::Document;
+use crate::change_set::ChangeSet;
 
 /// The version of the JSON shape [`render_json`] emits. A change that breaks
 /// a consumer of the shape bumps it.
@@ -23,7 +23,7 @@ pub struct JsonOptions {
 
 /// The inputs, other than the vault's key material, of the
 /// `FingerprintKey::derive` call that produced a change set's fingerprints.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct FingerprintKeyInfo {
     /// The Argon2id parameters.
@@ -49,15 +49,6 @@ impl FingerprintKeyInfo {
     }
 }
 
-#[derive(Serialize)]
-struct Document<'a> {
-    format_version: u32,
-    fingerprint_key: Option<FingerprintKeyInfo>,
-    changes: &'a [Change],
-    summary: &'a Summary,
-    warnings: &'a [DiffWarning],
-}
-
 /// Render a change set as pretty-printed JSON:
 ///
 /// ```json
@@ -68,15 +59,9 @@ struct Document<'a> {
 /// Fingerprints appear in full (64 hex characters). The shape is pinned by
 /// snapshot tests and versioned by [`JSON_FORMAT_VERSION`].
 pub fn render_json(cs: &ChangeSet, opts: &JsonOptions) -> String {
-    let doc = Document {
-        format_version: JSON_FORMAT_VERSION,
-        fingerprint_key: opts.fingerprint_key,
-        changes: &cs.changes,
-        summary: &cs.summary,
-        warnings: &cs.warnings,
-    };
+    let doc = Document::new(cs, opts.fingerprint_key.as_ref());
     let mut out = serde_json::to_string_pretty(&doc)
-        .unwrap_or_else(|e| unreachable!("a change set always serializes: {e}"));
+        .unwrap_or_else(|e| unreachable!("the wire document always serializes: {e}"));
     out.push('\n');
     out
 }

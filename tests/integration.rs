@@ -481,7 +481,7 @@ fn kdf_downgrade_warns() {
         .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
     assert_eq!(v["warnings"][0]["kind"], "kdf_weakened");
-    assert_eq!(v["warnings"][0]["weakening"]["aspect"], "memory_lowered");
+    assert_eq!(v["warnings"][0]["aspect"], "memory_lowered");
     // Both vaults cost less than the floor, so the key derives at the floor.
     assert_eq!(
         v["fingerprint_key"]["params"],

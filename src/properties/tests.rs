@@ -1,11 +1,12 @@
 use std::collections::BTreeSet;
 
 use kdbx_core::model::Field;
+use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value as Json;
 
 use super::*;
-use crate::test_support::{fp, id, maximal_entry, maximal_group, maximal_snapshot, t};
+use crate::test_support::{id, maximal_entry, maximal_group, maximal_snapshot, t};
 
 // ---------------------------------------------------------------------------
 // Every model field maps to a property.
@@ -455,43 +456,5 @@ fn labels_are_single_printable_lines() {
     assert_eq!(
         Property::Meta(MetaKey::MemoryProtection(StandardField::Url)).to_string(),
         "ProtectURL"
-    );
-}
-
-#[test]
-fn property_json_shape() {
-    let json = |p: &Property| serde_json::to_value(p).unwrap();
-    assert_eq!(
-        json(&Property::Field(FieldName::new("Password"))),
-        serde_json::json!({"kind": "field", "key": "Password"})
-    );
-    assert_eq!(json(&Property::Name), serde_json::json!({"kind": "name"}));
-    assert_eq!(
-        json(&Property::Time(TimeField::UsageCount)),
-        serde_json::json!({"kind": "time", "key": "UsageCount"})
-    );
-    assert_eq!(
-        json(&Property::History {
-            item: HistoryKey {
-                modified: Some(t(0)),
-                index: 1
-            },
-            property: Box::new(Property::Tag("x".into())),
-        }),
-        serde_json::json!({"kind": "history", "key": {
-            "item": {"modified": "2026-01-01T09:00:00Z", "index": 1},
-            "property": {"kind": "tag", "key": "x"}
-        }})
-    );
-    assert_eq!(
-        serde_json::to_value(Shown::Field {
-            protected: true,
-            value: Value::Sealed(fp(0x12)),
-        })
-        .unwrap(),
-        serde_json::json!({"type": "field", "value": {
-            "protected": true,
-            "value": {"sealed": "12".repeat(32)}
-        }})
     );
 }

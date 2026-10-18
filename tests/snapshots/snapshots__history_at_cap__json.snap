@@ -20,134 +20,90 @@ expression: "render_json(&cs, &JsonOptions::default())"
           },
           "before": {
             "type": "field",
-            "value": {
-              "protected": false,
-              "value": {
-                "plain": "https://bank.example/v4"
-              }
-            }
+            "protected": false,
+            "text": "https://bank.example/v4"
           },
           "after": {
             "type": "field",
-            "value": {
-              "protected": false,
-              "value": {
-                "plain": "https://bank.example/v5"
-              }
-            }
+            "protected": false,
+            "text": "https://bank.example/v5"
           }
         },
         {
           "property": {
             "kind": "history",
-            "key": {
-              "item": {
-                "modified": "2026-01-01T09:00:00Z",
-                "index": 0
-              },
-              "property": {
-                "kind": "field",
-                "key": "Title"
-              }
+            "modified": "2026-01-01T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "Title"
             }
           },
           "before": {
             "type": "field",
-            "value": {
-              "protected": false,
-              "value": {
-                "plain": "Bank"
-              }
-            }
+            "protected": false,
+            "text": "Bank"
           },
           "after": null
         },
         {
           "property": {
             "kind": "history",
-            "key": {
-              "item": {
-                "modified": "2026-01-01T09:00:00Z",
-                "index": 0
-              },
-              "property": {
-                "kind": "field",
-                "key": "UserName"
-              }
+            "modified": "2026-01-01T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "UserName"
             }
           },
           "before": {
             "type": "field",
-            "value": {
-              "protected": false,
-              "value": {
-                "plain": "alice"
-              }
-            }
+            "protected": false,
+            "text": "alice"
           },
           "after": null
         },
         {
           "property": {
             "kind": "history",
-            "key": {
-              "item": {
-                "modified": "2026-01-01T09:00:00Z",
-                "index": 0
-              },
-              "property": {
-                "kind": "field",
-                "key": "Password"
-              }
+            "modified": "2026-01-01T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "Password"
             }
           },
           "before": {
             "type": "field",
-            "value": {
-              "protected": true,
-              "value": {
-                "sealed": "83b20c03773abb3999a1d9c2b26caa8130dad3f06fbad82c1dfc09eac7685729"
-              }
-            }
+            "protected": true,
+            "sealed": "83b20c03773abb3999a1d9c2b26caa8130dad3f06fbad82c1dfc09eac7685729"
           },
           "after": null
         },
         {
           "property": {
             "kind": "history",
-            "key": {
-              "item": {
-                "modified": "2026-01-01T09:00:00Z",
-                "index": 0
-              },
-              "property": {
-                "kind": "field",
-                "key": "URL"
-              }
+            "modified": "2026-01-01T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "URL"
             }
           },
           "before": {
             "type": "field",
-            "value": {
-              "protected": false,
-              "value": {
-                "plain": "https://bank.example"
-              }
-            }
+            "protected": false,
+            "text": "https://bank.example"
           },
           "after": null
         },
         {
           "property": {
             "kind": "history",
-            "key": {
-              "item": {
-                "modified": "2026-01-01T09:00:00Z",
-                "index": 0
-              },
-              "property": {
-                "kind": "quality_check"
-              }
+            "modified": "2026-01-01T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "quality_check"
             }
           },
           "before": {
@@ -159,15 +115,11 @@ expression: "render_json(&cs, &JsonOptions::default())"
         {
           "property": {
             "kind": "history",
-            "key": {
-              "item": {
-                "modified": "2026-01-01T09:00:00Z",
-                "index": 0
-              },
-              "property": {
-                "kind": "time",
-                "key": "CreationTime"
-              }
+            "modified": "2026-01-01T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "time",
+              "key": "CreationTime"
             }
           },
           "before": {
@@ -179,15 +131,11 @@ expression: "render_json(&cs, &JsonOptions::default())"
         {
           "property": {
             "kind": "history",
-            "key": {
-              "item": {
-                "modified": "2026-01-01T09:00:00Z",
-                "index": 0
-              },
-              "property": {
-                "kind": "time",
-                "key": "Expires"
-              }
+            "modified": "2026-01-01T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "time",
+              "key": "Expires"
             }
           },
           "before": {
@@ -199,114 +147,78 @@ expression: "render_json(&cs, &JsonOptions::default())"
         {
           "property": {
             "kind": "history",
-            "key": {
-              "item": {
-                "modified": "2026-01-04T09:00:00Z",
-                "index": 0
-              },
-              "property": {
-                "kind": "field",
-                "key": "Title"
-              }
+            "modified": "2026-01-04T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "Title"
             }
           },
           "before": null,
           "after": {
             "type": "field",
-            "value": {
-              "protected": false,
-              "value": {
-                "plain": "Bank"
-              }
-            }
+            "protected": false,
+            "text": "Bank"
           }
         },
         {
           "property": {
             "kind": "history",
-            "key": {
-              "item": {
-                "modified": "2026-01-04T09:00:00Z",
-                "index": 0
-              },
-              "property": {
-                "kind": "field",
-                "key": "UserName"
-              }
+            "modified": "2026-01-04T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "UserName"
             }
           },
           "before": null,
           "after": {
             "type": "field",
-            "value": {
-              "protected": false,
-              "value": {
-                "plain": "alice"
-              }
-            }
+            "protected": false,
+            "text": "alice"
           }
         },
         {
           "property": {
             "kind": "history",
-            "key": {
-              "item": {
-                "modified": "2026-01-04T09:00:00Z",
-                "index": 0
-              },
-              "property": {
-                "kind": "field",
-                "key": "Password"
-              }
+            "modified": "2026-01-04T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "Password"
             }
           },
           "before": null,
           "after": {
             "type": "field",
-            "value": {
-              "protected": true,
-              "value": {
-                "sealed": "83b20c03773abb3999a1d9c2b26caa8130dad3f06fbad82c1dfc09eac7685729"
-              }
-            }
+            "protected": true,
+            "sealed": "83b20c03773abb3999a1d9c2b26caa8130dad3f06fbad82c1dfc09eac7685729"
           }
         },
         {
           "property": {
             "kind": "history",
-            "key": {
-              "item": {
-                "modified": "2026-01-04T09:00:00Z",
-                "index": 0
-              },
-              "property": {
-                "kind": "field",
-                "key": "URL"
-              }
+            "modified": "2026-01-04T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "URL"
             }
           },
           "before": null,
           "after": {
             "type": "field",
-            "value": {
-              "protected": false,
-              "value": {
-                "plain": "https://bank.example/v4"
-              }
-            }
+            "protected": false,
+            "text": "https://bank.example/v4"
           }
         },
         {
           "property": {
             "kind": "history",
-            "key": {
-              "item": {
-                "modified": "2026-01-04T09:00:00Z",
-                "index": 0
-              },
-              "property": {
-                "kind": "quality_check"
-              }
+            "modified": "2026-01-04T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "quality_check"
             }
           },
           "before": null,
@@ -318,15 +230,11 @@ expression: "render_json(&cs, &JsonOptions::default())"
         {
           "property": {
             "kind": "history",
-            "key": {
-              "item": {
-                "modified": "2026-01-04T09:00:00Z",
-                "index": 0
-              },
-              "property": {
-                "kind": "time",
-                "key": "CreationTime"
-              }
+            "modified": "2026-01-04T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "time",
+              "key": "CreationTime"
             }
           },
           "before": null,
@@ -338,15 +246,11 @@ expression: "render_json(&cs, &JsonOptions::default())"
         {
           "property": {
             "kind": "history",
-            "key": {
-              "item": {
-                "modified": "2026-01-04T09:00:00Z",
-                "index": 0
-              },
-              "property": {
-                "kind": "time",
-                "key": "Expires"
-              }
+            "modified": "2026-01-04T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "time",
+              "key": "Expires"
             }
           },
           "before": null,

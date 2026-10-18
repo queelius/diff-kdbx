@@ -3,7 +3,6 @@
 
 use kdbx_core::model::FormatVersion;
 use kdbx_core::path::VaultPath;
-use serde::Serialize;
 use uuid::Uuid;
 
 use crate::properties::{KdfKind, Property, Shown};
@@ -13,7 +12,7 @@ use crate::properties::{KdfKind, Property, Shown};
 ///
 /// The JSON form (see [`render_json`](crate::render_json)) is a documented
 /// contract versioned by `format_version`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct ChangeSet {
     /// The changed nodes: the database record first (if any), then groups,
@@ -26,8 +25,7 @@ pub struct ChangeSet {
 }
 
 /// One changed node.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "scope", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Change {
     /// Database-level properties (format, header, `<Meta>`, tombstones).
@@ -43,7 +41,7 @@ pub enum Change {
 }
 
 /// A group or entry that was added, removed, or modified.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct NodeChange {
     /// Record identity (the match key between the two snapshots).
@@ -53,13 +51,11 @@ pub struct NodeChange {
     /// path and are identified by `uuid`.
     pub path: Option<VaultPath>,
     /// What happened to it.
-    #[serde(flatten)]
     pub status: NodeStatus,
 }
 
 /// What happened to a node.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum NodeStatus {
     /// Present only after.
@@ -82,7 +78,7 @@ pub enum NodeStatus {
 ///
 /// `before` is `None` for an added property, `after` is `None` for a removed
 /// one; both are present for a modified one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct PropertyChange {
     /// Which property.
@@ -96,7 +92,7 @@ pub struct PropertyChange {
 /// Counts over a change set. Every counter is computed from the records
 /// ([`ChangeSet::new`]), except `suppressed`, which counts what noise
 /// suppression removed before the records were built.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Summary {
     /// Entries present only after.
@@ -125,8 +121,7 @@ pub struct Summary {
 }
 
 /// A non-fatal observation about a comparison.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DiffWarning {
     /// The two files use different KDBX versions, so some properties exist
@@ -147,8 +142,7 @@ pub enum DiffWarning {
 }
 
 /// How a key derivation function got cheaper to attack.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "aspect", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum KdfWeakening {
     /// A memory-hard KDF (Argon2) was replaced by one that is not (AES-KDF).
@@ -332,9 +326,6 @@ impl PropertyChange {
 
 #[cfg(test)]
 mod tests {
-    use kdbx_core::fingerprint::Fingerprint;
-    use kdbx_core::model::Value;
-    use serde_json::json;
 
     use super::*;
     use crate::properties::FieldName;
@@ -427,95 +418,5 @@ mod tests {
         );
         assert!(cs.is_empty());
         assert!(!ChangeSet::new(vec![entry(1, NodeStatus::Added)], vec![], 0).is_empty());
-    }
-
-    #[test]
-    fn json_shape_of_node_records() {
-        let fp = Fingerprint::from_bytes([0xab; 32]);
-        let modified = entry(
-            0x11,
-            NodeStatus::Modified {
-                moved_from: path("/Work/VPN"),
-                changes: vec![PropertyChange::new(
-                    Property::Field(FieldName::new("Password")),
-                    Some(Shown::Field {
-                        protected: true,
-                        value: Value::Sealed(fp),
-                    }),
-                    None,
-                )],
-            },
-        );
-        assert_eq!(
-            serde_json::to_value(&modified).unwrap(),
-            json!({
-                "scope": "entry",
-                "uuid": "00000000-0000-0000-0000-000000000011",
-                "path": "/x",
-                "status": "modified",
-                "moved_from": "/Work/VPN",
-                "changes": [{
-                    "property": {"kind": "field", "key": "Password"},
-                    "before": {"type": "field", "value": {
-                        "protected": true, "value": {"sealed": "ab".repeat(32)}
-                    }},
-                    "after": null
-                }]
-            })
-        );
-        let unnamed = Change::Group(NodeChange::new(Uuid::nil(), None, NodeStatus::Removed));
-        assert_eq!(
-            serde_json::to_value(&unnamed).unwrap(),
-            json!({
-                "scope": "group",
-                "uuid": "00000000-0000-0000-0000-000000000000",
-                "path": null,
-                "status": "removed"
-            })
-        );
-        let db = Change::Database { changes: vec![] };
-        assert_eq!(
-            serde_json::to_value(&db).unwrap(),
-            json!({"scope": "database", "changes": []})
-        );
-    }
-
-    #[test]
-    fn json_shape_of_warnings() {
-        assert_eq!(
-            serde_json::to_value(DiffWarning::VersionMismatch {
-                before: FormatVersion::KDBX_4_0,
-                after: FormatVersion::KDBX_4_1,
-            })
-            .unwrap(),
-            json!({
-                "kind": "version_mismatch",
-                "before": {"major": 4, "minor": 0},
-                "after": {"major": 4, "minor": 1}
-            })
-        );
-        assert_eq!(
-            serde_json::to_value(DiffWarning::KdfWeakened {
-                weakening: KdfWeakening::NoLongerMemoryHard {
-                    before: KdfKind::Argon2id,
-                    after: KdfKind::AesKdf,
-                },
-            })
-            .unwrap(),
-            json!({
-                "kind": "kdf_weakened",
-                "weakening": {"aspect": "no_longer_memory_hard", "before": "argon2id", "after": "aes_kdf"}
-            })
-        );
-    }
-
-    #[test]
-    fn json_shape_of_a_change_set() {
-        let cs = ChangeSet::new(vec![], vec![], 2);
-        let v = serde_json::to_value(&cs).unwrap();
-        assert_eq!(v["changes"], json!([]));
-        assert_eq!(v["warnings"], json!([]));
-        assert_eq!(v["summary"]["suppressed"], json!(2));
-        assert_eq!(v["summary"].as_object().unwrap().len(), 11);
     }
 }

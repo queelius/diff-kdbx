@@ -23,17 +23,15 @@ use kdbx_core::model::{
     KdfInfo, Meta, OuterCipher, Rgb, Snapshot, Times, Timestamp, Value,
 };
 use kdbx_core::text::quote;
-use serde::{Serialize, Serializer};
 use uuid::Uuid;
 
 /// One property of a node: a model field, or one element of a keyed model
 /// collection (a field, a tag, an attachment, a history item's property).
 ///
-/// Variants are declared in canonical (dump) order. The JSON form is
-/// `{"kind": "<variant>", "key": <key>}`; `Display` gives the line-safe text
-/// label used by the text renderer and the dump.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
-#[serde(tag = "kind", content = "key", rename_all = "snake_case")]
+/// Variants are declared in canonical (dump) order. `Display` gives the text
+/// label used by the text renderer and the dump; the JSON form is defined by
+/// [`render_json`](crate::render_json).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum Property {
     /// A group's name (an entry's name is its `Title` field).
@@ -105,7 +103,7 @@ pub enum Property {
 /// field.
 ///
 /// Orders the standard fields first, in KDBX order (Title, UserName,
-/// Password, URL, Notes), then custom fields by name. Serializes as the name.
+/// Password, URL, Notes), then custom fields by name.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum FieldName {
@@ -121,7 +119,7 @@ pub enum FieldName {
 /// Keying by time rather than by position makes trimming at the history cap
 /// and pushing a new item two precise changes (one item removed, one added)
 /// instead of a shift of every position.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub struct HistoryKey {
     /// The item's last-modification time (`None` when absent).
@@ -265,8 +263,7 @@ pub enum MetaKey {
 
 /// The kind of key derivation function, without its parameters (those are
 /// separate [`HeaderKey`] properties).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum KdfKind {
     /// AES-KDF.
@@ -285,9 +282,8 @@ pub enum KdfKind {
 /// (sealing happens at capture), so nothing here can hold a protected
 /// plaintext unless the snapshot was captured with `Sealing::Reveal`.
 ///
-/// The JSON form is `{"type": "<variant>", "value": <value>}`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "type", content = "value", rename_all = "snake_case")]
+/// The JSON form is defined by [`render_json`](crate::render_json).
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Shown {
     /// Plain metadata text (a name, a URL, notes).
@@ -576,7 +572,7 @@ impl KdfKind {
 }
 
 // ---------------------------------------------------------------------------
-// Labels: one name per key, used by Display (text) and Serialize (JSON).
+// Labels: one name per key, used by Display (text) and the JSON wire format.
 
 impl fmt::Display for FieldName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -726,26 +722,6 @@ impl fmt::Display for Property {
         }
     }
 }
-
-macro_rules! serialize_as_label {
-    ($($ty:ty),*) => {$(
-        impl Serialize for $ty {
-            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                serializer.collect_str(self)
-            }
-        }
-    )*};
-}
-
-serialize_as_label!(
-    FieldName,
-    ColorRole,
-    AutoTypeKey,
-    GroupFlag,
-    TimeField,
-    HeaderKey,
-    MetaKey
-);
 
 // ---------------------------------------------------------------------------
 // The property maps.

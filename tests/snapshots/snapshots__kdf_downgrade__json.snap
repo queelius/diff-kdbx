@@ -56,19 +56,15 @@ expression: "render_json(&cs, &JsonOptions::default())"
   "warnings": [
     {
       "kind": "kdf_weakened",
-      "weakening": {
-        "aspect": "memory_lowered",
-        "before": 2097152,
-        "after": 1048576
-      }
+      "aspect": "memory_lowered",
+      "before": 2097152,
+      "after": 1048576
     },
     {
       "kind": "kdf_weakened",
-      "weakening": {
-        "aspect": "iterations_lowered",
-        "before": 4,
-        "after": 2
-      }
+      "aspect": "iterations_lowered",
+      "before": 4,
+      "after": 2
     }
   ]
 }

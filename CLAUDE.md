@@ -41,6 +41,7 @@ src/
 ├── render/mod.rs   # value text forms shared by dump and text renderer
 ├── render/text.rs  # render_text()
 ├── render/json.rs  # render_json(), JsonOptions, FingerprintKeyInfo
+├── render/wire.rs  # the JSON wire format (private types, every leaf)
 ├── test_support.rs # snapshot builders for unit tests (cfg(test))
 └── bin/diff-kdbx.rs  # CLI: key resolution, fingerprint key derivation,
                       # capture, modes, fingerprint subcommand
@@ -65,8 +66,10 @@ examples/gen_fixtures.rs  # regenerates tests/fixtures (keepass save_kdbx4)
 - Textconv output is storable (git's textconv cache is a notes ref that
   mirrors and bundles carry): `--textconv` never reveals secrets, and the
   docs keep `cachetextconv` opt-in.
-- The JSON shape is versioned (`JSON_FORMAT_VERSION`); the insta snapshots in
-  `tests/snapshots/` pin it. Changing a snapshot is changing the contract.
+- The JSON shape is versioned (`JSON_FORMAT_VERSION`) and defined only in
+  `src/render/wire.rs`; public types do not implement `Serialize`. The insta
+  snapshots in `tests/snapshots/` pin it. Changing a snapshot is changing the
+  contract.
 
 ## Commands (the gates; run all before every commit)
 

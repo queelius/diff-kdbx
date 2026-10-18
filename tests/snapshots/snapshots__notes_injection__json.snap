@@ -21,12 +21,8 @@ expression: "render_json(&cs, &JsonOptions::default())"
           "before": null,
           "after": {
             "type": "field",
-            "value": {
-              "protected": false,
-              "value": {
-                "plain": "PIN reminder\n+ ENTRY /Forged\n~ GROUP /Forged/\nENTRY /Forged [uuid:0]"
-              }
-            }
+            "protected": false,
+            "text": "PIN reminder\n+ ENTRY /Forged\n~ GROUP /Forged/\nENTRY /Forged [uuid:0]"
           }
         }
       ]

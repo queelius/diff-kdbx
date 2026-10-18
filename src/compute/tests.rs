@@ -363,9 +363,14 @@ fn every_entry_property_kind_is_reported() {
         .find(|c| c.property == Property::Color(ColorRole::Foreground))
         .unwrap();
     assert_eq!(
-        serde_json::to_value(&fg.after).unwrap()["value"],
-        serde_json::json!("#0A0B0C")
+        fg.after,
+        Some(Shown::Color(Rgb {
+            r: 0x0A,
+            g: 0x0B,
+            b: 0x0C
+        }))
     );
+    assert_eq!(crate::render::inline(fg.after.as_ref().unwrap()), "#0A0B0C");
 }
 
 #[test]
