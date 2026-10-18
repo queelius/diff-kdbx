@@ -1,0 +1,8 @@
+---
+source: tests/snapshots.rs
+expression: render_text(&cs)
+---
+summary: entries +0/-0/~1 (0 moved), groups +0/-0/~0 (0 moved), properties 2, database 0, suppressed 3
+~ ENTRY /Personal/Bank
+  ~ Attachment[recovery.txt]: <sealed:0212f503> (8 bytes) -> <sealed:b18265cd> (8 bytes)
+  + Attachment[statement.pdf]: <sealed:073b9c9f> (8 bytes)

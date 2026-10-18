@@ -268,3 +268,12 @@ fn nodes_are_in_tree_order_with_same_named_siblings_by_uuid() {
         "byte-stable"
     );
 }
+
+#[test]
+fn an_empty_value_keeps_its_colon() {
+    let snap = snapshot(Group::new(id(1), "").with_entry(titled(0x11, "")));
+    let out = dump(&snap, &DumpOptions::default());
+    assert!(out.contains("\n  Name:\n"), "{out}");
+    assert!(out.contains("\n  Title:\n"), "{out}");
+    assert!(out.contains("ENTRY (no path) [uuid:"), "{out}");
+}

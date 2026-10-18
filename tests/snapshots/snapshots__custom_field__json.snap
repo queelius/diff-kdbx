@@ -1,0 +1,57 @@
+---
+source: tests/snapshots.rs
+expression: "render_json(&cs, &JsonOptions::default())"
+---
+{
+  "format_version": 1,
+  "fingerprint_key": null,
+  "changes": [
+    {
+      "scope": "entry",
+      "uuid": "00000012-d1ff-4000-8000-000000000000",
+      "path": "/Personal/Email",
+      "status": "modified",
+      "moved_from": null,
+      "changes": [
+        {
+          "property": {
+            "kind": "field",
+            "key": "otp"
+          },
+          "before": {
+            "type": "field",
+            "value": {
+              "protected": true,
+              "value": {
+                "sealed": "af5c6854af6060524afb88904839e63f2162d3c6922cde2ea9eea9bc695193b8"
+              }
+            }
+          },
+          "after": {
+            "type": "field",
+            "value": {
+              "protected": true,
+              "value": {
+                "sealed": "e470a942a78445b0b92b76d2c7f87eb4f98fd5207c4e13755973834cd22ba008"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "entries_added": 0,
+    "entries_removed": 0,
+    "entries_modified": 1,
+    "entries_moved": 0,
+    "groups_added": 0,
+    "groups_removed": 0,
+    "groups_modified": 0,
+    "groups_moved": 0,
+    "node_properties": 1,
+    "database_properties": 0,
+    "suppressed": 3
+  },
+  "warnings": []
+}

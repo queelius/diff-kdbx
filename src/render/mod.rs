@@ -4,6 +4,9 @@
 //! values through `escape_inline`, multi-line values through
 //! `continuation_lines`, so no value can forge a structural output line.
 
+pub(crate) mod json;
+pub(crate) mod text;
+
 use std::fmt::Write as _;
 
 use kdbx_core::model::{AutoTypeObfuscation, Compression, Icon, InnerCipher, OuterCipher, Value};
@@ -24,12 +27,15 @@ pub(crate) struct ValueText<'a> {
     pub(crate) inline: String,
     /// Multi-line text, rendered with [`continuation_lines`].
     pub(crate) block: Option<&'a str>,
+    /// Presence alone: the line is the label, without a colon.
+    pub(crate) bare: bool,
 }
 
 impl<'a> ValueText<'a> {
     /// The text form of `value` as the value of `property`.
     pub(crate) fn of(property: &Property, value: &'a Shown) -> Self {
         let multiline = property.is_multiline();
+        let bare = matches!(value, Shown::Present);
         let (text, marker) = match value {
             Shown::Text(s) => (Some(s.as_str()), None),
             Shown::Field {
@@ -42,14 +48,17 @@ impl<'a> ValueText<'a> {
             Some(s) if multiline => ValueText {
                 inline: marker.unwrap_or_default().to_owned(),
                 block: Some(s),
+                bare,
             },
             Some(s) => ValueText {
                 inline: join(&escape_inline(s), marker),
                 block: None,
+                bare,
             },
             None => ValueText {
                 inline: inline(value),
                 block: None,
+                bare,
             },
         }
     }
@@ -59,7 +68,7 @@ impl<'a> ValueText<'a> {
     /// with `sign`.
     pub(crate) fn write(&self, out: &mut String, indent: &str, sign: &str, label: &str) {
         let _ = write!(out, "{indent}{sign}{label}");
-        if !self.inline.is_empty() || self.block.is_some() {
+        if !self.bare {
             out.push(':');
         }
         if !self.inline.is_empty() {

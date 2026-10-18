@@ -1,0 +1,70 @@
+---
+source: tests/snapshots.rs
+expression: "render_json(&cs, &JsonOptions::default())"
+---
+{
+  "format_version": 1,
+  "fingerprint_key": null,
+  "changes": [
+    {
+      "scope": "entry",
+      "uuid": "00000011-d1ff-4000-8000-000000000000",
+      "path": "/Personal/Bank",
+      "status": "modified",
+      "moved_from": null,
+      "changes": [
+        {
+          "property": {
+            "kind": "attachment",
+            "key": "recovery.txt"
+          },
+          "before": {
+            "type": "attachment",
+            "value": {
+              "size": 8,
+              "fingerprint": "0212f503b8357709515671e7fe0af460100c02ee092fcb39bf58352deecdbb1d",
+              "protected": false
+            }
+          },
+          "after": {
+            "type": "attachment",
+            "value": {
+              "size": 8,
+              "fingerprint": "b18265cdd0463486d50000985fb6e3838838f9b3478747225b833ad84c77fa2a",
+              "protected": false
+            }
+          }
+        },
+        {
+          "property": {
+            "kind": "attachment",
+            "key": "statement.pdf"
+          },
+          "before": null,
+          "after": {
+            "type": "attachment",
+            "value": {
+              "size": 8,
+              "fingerprint": "073b9c9f242308de0d43772341034420fe2503a2d59f46bffc5fdf9e99f59138",
+              "protected": false
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "entries_added": 0,
+    "entries_removed": 0,
+    "entries_modified": 1,
+    "entries_moved": 0,
+    "groups_added": 0,
+    "groups_removed": 0,
+    "groups_modified": 0,
+    "groups_moved": 0,
+    "node_properties": 2,
+    "database_properties": 0,
+    "suppressed": 3
+  },
+  "warnings": []
+}

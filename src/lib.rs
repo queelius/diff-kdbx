@@ -31,6 +31,8 @@ pub use properties::{
     AutoTypeKey, ColorRole, FieldName, GroupFlag, HeaderKey, HistoryKey, KdfKind, MetaKey,
     Property, Shown, TimeField,
 };
+pub use render::json::{FingerprintKeyInfo, JSON_FORMAT_VERSION, JsonOptions, render_json};
+pub use render::text::render_text;
 
 #[cfg(feature = "cli")]
 #[doc(hidden)]

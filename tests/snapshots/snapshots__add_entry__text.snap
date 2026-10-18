@@ -1,0 +1,6 @@
+---
+source: tests/snapshots.rs
+expression: render_text(&cs)
+---
+summary: entries +1/-0/~0 (0 moved), groups +0/-0/~0 (0 moved), properties 0, database 0, suppressed 0
++ ENTRY /Work/GitHub
