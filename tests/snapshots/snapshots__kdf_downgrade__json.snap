@@ -1,0 +1,74 @@
+---
+source: tests/snapshots.rs
+expression: "render_json(&cs, &JsonOptions::default())"
+---
+{
+  "format_version": 1,
+  "fingerprint_key": null,
+  "changes": [
+    {
+      "scope": "database",
+      "changes": [
+        {
+          "property": {
+            "kind": "header",
+            "key": "KdfMemory"
+          },
+          "before": {
+            "type": "uint",
+            "value": 2097152
+          },
+          "after": {
+            "type": "uint",
+            "value": 1048576
+          }
+        },
+        {
+          "property": {
+            "kind": "header",
+            "key": "KdfIterations"
+          },
+          "before": {
+            "type": "uint",
+            "value": 4
+          },
+          "after": {
+            "type": "uint",
+            "value": 2
+          }
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "entries_added": 0,
+    "entries_removed": 0,
+    "entries_modified": 0,
+    "entries_moved": 0,
+    "groups_added": 0,
+    "groups_removed": 0,
+    "groups_modified": 0,
+    "groups_moved": 0,
+    "node_properties": 0,
+    "database_properties": 2,
+    "suppressed": 0
+  },
+  "warnings": [
+    {
+      "kind": "kdf_weakened",
+      "weakening": {
+        "aspect": "memory_lowered",
+        "before": 2097152,
+        "after": 1048576
+      }
+    },
+    {
+      "kind": "kdf_weakened",
+      "weakening": {
+        "aspect": "iterations_lowered",
+        "before": 4,
+        "after": 2
+      }
+    }
+  ]
+}

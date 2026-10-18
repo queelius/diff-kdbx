@@ -1,0 +1,11 @@
+---
+source: tests/snapshots.rs
+expression: render_text(&cs)
+---
+summary: entries +0/-0/~1 (0 moved), groups +0/-0/~0 (0 moved), properties 1, database 0, suppressed 3
+~ ENTRY /Personal/Bank
+  + Notes:
+      | PIN reminder
+      | + ENTRY /Forged
+      | ~ GROUP /Forged/
+      | ENTRY /Forged [uuid:0]

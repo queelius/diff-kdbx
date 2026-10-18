@@ -4,7 +4,13 @@
 //!   cargo run --example gen_fixtures
 //!
 //! Each fixture is a directory `tests/fixtures/<name>/` holding `before.kdbx`
-//! and `after.kdbx`. Master password for all of them: `test-password-do-not-use`.
+//! and `after.kdbx`. Master password for all of them: `test-password-do-not-use`
+//! (except `keyfile_only/`, a single vault opened by its key file alone).
+//!
+//! Every vault uses a deliberately cheap KDF (Argon2id, 1 MiB, 2 passes, 1
+//! lane): the CLI derives its fingerprint key with parameters no weaker than
+//! the vault's own, so a costly fixture KDF would make every test invocation
+//! pay for it.
 //!
 //! Content is reproducible: every group and entry has a fixed UUID and every
 //! timestamp is fixed, so regenerating yields the same vault content (and the
@@ -22,7 +28,8 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use chrono::NaiveDateTime;
-use keepass::db::{EntryId, GroupId, Times, Value, fields};
+use keepass::config::KdfConfig;
+use keepass::db::{EntryId, GroupId, History, Times, Value, fields};
 use keepass::{Database, DatabaseKey};
 use uuid::Uuid;
 
@@ -31,8 +38,8 @@ const MASTER: &str = "test-password-do-not-use";
 const FIXTURES_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures");
 
 // Fixed identities, `0000000n-d1ff-4000-8000-000000000000`. The varying part
-// leads, because the dump's short tag is a UUID's first 8 hex digits and must
-// tell entries apart; "d1ff" marks them as fixture IDs.
+// leads, so a UUID's first 8 hex digits name the node at a glance; "d1ff"
+// marks them as fixture IDs.
 const fn id(n: u128) -> Uuid {
     Uuid::from_u128((n << 96) | 0x0000_0000_d1ff_4000_8000_0000_0000_0000)
 }
@@ -43,10 +50,32 @@ const BANK: EntryId = EntryId::from_uuid(id(0x11));
 const EMAIL: EntryId = EntryId::from_uuid(id(0x12));
 const VPN: EntryId = EntryId::from_uuid(id(0x13));
 const GITHUB: EntryId = EntryId::from_uuid(id(0x14));
+const RECYCLE_BIN: GroupId = GroupId::from_uuid(id(0x04));
 
 /// When the base vault was "created", and when the edit in each `after` happened.
 const CREATED: &str = "2026-01-01 09:00:00";
 const EDITED: &str = "2026-02-01 09:00:00";
+
+/// The key file of `keyfile_only/` (arbitrary bytes: keepass hashes them).
+const KEY_FILE: &[u8] = b"diff-kdbx fixture key file, published, never reuse\n";
+
+/// The cheap KDF every fixture vault uses.
+fn cheap_kdf(memory: u64, iterations: u64) -> KdfConfig {
+    KdfConfig::Argon2id {
+        iterations,
+        memory,
+        parallelism: 1,
+        version: rust_argon2::Version::Version13,
+    }
+}
+
+/// A new vault with a fixed root UUID and the cheap KDF.
+fn new_vault() -> Database {
+    let mut db = Database::new_with_root_id(ROOT);
+    db.config.kdf_config = cheap_kdf(1 << 20, 2);
+    db.root_mut().name = "Root".into();
+    db
+}
 
 fn at(s: &str) -> NaiveDateTime {
     NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").expect("valid fixture timestamp")
@@ -80,11 +109,10 @@ fn key() -> DatabaseKey {
 ///     └── VPN    (alice, protected Password, URL)
 /// ```
 fn base() -> Result<Database> {
-    let mut db = Database::new_with_root_id(ROOT);
+    let mut db = new_vault();
     db.meta.database_name = Some("diff-kdbx fixture".into());
     {
         let mut root = db.root_mut();
-        root.name = "Root".into();
         root.add_group_with_id(PERSONAL)?.name = "Personal".into();
         root.add_group_with_id(WORK)?.name = "Work".into();
     }
@@ -126,11 +154,14 @@ fn freeze_all_times(db: &mut Database, t: &str) {
     }
     let entries: Vec<EntryId> = db.iter_all_entries().map(|e| e.id()).collect();
     for e in entries {
-        stamp(db, e, t);
+        if let Some(mut entry) = db.entry_mut(e) {
+            entry.times = fixed_times(t);
+        }
     }
 }
 
-/// Pin one entry's timestamps, as a KeePass client does when it saves an edit.
+/// Pin one entry's timestamps, as a KeePass client does when it saves an edit
+/// (creation time kept).
 fn stamp(db: &mut Database, e: EntryId, t: &str) {
     if let Some(mut entry) = db.entry_mut(e) {
         let created = entry.times.creation;
@@ -143,12 +174,44 @@ fn stamp(db: &mut Database, e: EntryId, t: &str) {
 }
 
 fn save(db: &Database, path: &Path) -> Result<()> {
+    save_with(db, path, key())
+}
+
+fn save_with(db: &Database, path: &Path, key: DatabaseKey) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
     let mut f = File::create(path).with_context(|| format!("create {}", path.display()))?;
-    db.save(&mut f, key())
+    db.save(&mut f, key)
         .with_context(|| format!("save {}", path.display()))?;
+    Ok(())
+}
+
+/// Edit Bank's URL with history tracking (the prior state becomes a history
+/// item), stamped at `t`.
+fn tracked_url_edit(db: &mut Database, url: &str, t: &str) -> Result<()> {
+    db.entry_mut(BANK)
+        .context("Bank")?
+        .edit_tracking(|e| e.set_unprotected(fields::URL, url));
+    stamp(db, BANK, t);
+    Ok(())
+}
+
+/// Drop Bank's oldest history item, as a client does at the history cap.
+fn trim_oldest_history(db: &mut Database) -> Result<()> {
+    let mut bank = db.entry_mut(BANK).context("Bank")?;
+    let items = bank
+        .history
+        .as_ref()
+        .map(|h| h.get_entries().clone())
+        .unwrap_or_default();
+    // keepass keeps history newest first; add_entry inserts at the front, so
+    // re-adding oldest-to-newest restores that order without the oldest.
+    let mut kept = History::default();
+    for item in items.into_iter().rev().skip(1) {
+        kept.add_entry(item);
+    }
+    bank.history = Some(kept);
     Ok(())
 }
 
@@ -175,8 +238,7 @@ fn main() -> Result<()> {
     pair(
         "empty",
         {
-            let mut db = Database::new_with_root_id(ROOT);
-            db.root_mut().name = "Root".into();
+            let mut db = new_vault();
             freeze_all_times(&mut db, CREATED);
             db
         },
@@ -190,11 +252,11 @@ fn main() -> Result<()> {
         gh.set_unprotected(fields::TITLE, "GitHub");
         gh.set_unprotected(fields::USERNAME, "octocat");
         gh.set_protected(fields::PASSWORD, "gh-password");
-        stamp(db, GITHUB, EDITED);
+        gh.times = fixed_times(EDITED);
         Ok(())
     })?;
 
-    // Bank's protected password changes: a masked Modified field.
+    // Bank's protected password changes: a sealed property change.
     pair("password_change", base()?, |db| {
         db.entry_mut(BANK)
             .context("Bank")?
@@ -215,9 +277,27 @@ fn main() -> Result<()> {
         Ok(())
     })?;
 
+    // VPN moves from Work to Personal and its URL is edited: one record.
+    pair("move_and_edit", base()?, |db| {
+        db.entry_mut(VPN).context("VPN")?.move_to(PERSONAL)?;
+        db.entry_mut(VPN)
+            .context("VPN")?
+            .set_unprotected(fields::URL, "https://vpn2.example");
+        stamp(db, VPN, EDITED);
+        Ok(())
+    })?;
+
     // The Work group is renamed; its entries do not move.
     pair("rename_group", base()?, |db| {
         db.group_mut(WORK).context("Work group")?.name = "Office".into();
+        Ok(())
+    })?;
+
+    // The Work group moves under Personal and is renamed Office: one record.
+    pair("move_and_rename_group", base()?, |db| {
+        let mut work = db.group_mut(WORK).context("Work group")?;
+        work.move_to(PERSONAL)?;
+        work.name = "Office".into();
         Ok(())
     })?;
 
@@ -263,12 +343,26 @@ fn main() -> Result<()> {
     // Bank's URL is edited with history tracking: the prior state is pushed
     // into the entry's history, as a KeePass client does on every edit.
     pair("history_grew", base()?, |db| {
-        db.entry_mut(BANK)
-            .context("Bank")?
-            .edit_tracking(|e| e.set_unprotected(fields::URL, "https://bank.example/login"));
-        stamp(db, BANK, EDITED);
-        Ok(())
+        tracked_url_edit(db, "https://bank.example/login", EDITED)
     })?;
+
+    // The history cap (3 items) is reached: a fourth tracked edit pushes a
+    // new item and the oldest is trimmed. One item added, one removed.
+    pair(
+        "history_at_cap",
+        {
+            let mut db = base()?;
+            db.meta.history_max_items = Some(3);
+            tracked_url_edit(&mut db, "https://bank.example/v2", "2026-01-02 09:00:00")?;
+            tracked_url_edit(&mut db, "https://bank.example/v3", "2026-01-03 09:00:00")?;
+            tracked_url_edit(&mut db, "https://bank.example/v4", "2026-01-04 09:00:00")?;
+            db
+        },
+        |db| {
+            tracked_url_edit(db, "https://bank.example/v5", EDITED)?;
+            trim_oldest_history(db)
+        },
+    )?;
 
     // Opened and re-saved without edits: only access time and usage count move.
     pair("noisy_resave", base()?, |db| {
@@ -280,6 +374,109 @@ fn main() -> Result<()> {
         }
         Ok(())
     })?;
+
+    // Bank's Title becomes protected (KeePass's "protect title" setting). The
+    // Title is an address, never a secret: it stays plain and the path holds.
+    pair("protected_title", base()?, |db| {
+        db.entry_mut(BANK)
+            .context("Bank")?
+            .set_protected(fields::TITLE, "Bank");
+        stamp(db, BANK, EDITED);
+        Ok(())
+    })?;
+
+    // Bank's Notes become a multi-line value that tries to forge diff and
+    // dump lines.
+    pair("notes_injection", base()?, |db| {
+        db.entry_mut(BANK).context("Bank")?.set_unprotected(
+            fields::NOTES,
+            "PIN reminder\n+ ENTRY /Forged\n~ GROUP /Forged/\nENTRY /Forged [uuid:0]",
+        );
+        stamp(db, BANK, EDITED);
+        Ok(())
+    })?;
+
+    // Protection turned off without changing a value: Email's otp seed (which
+    // then leaves the sealed form) and Bank's Password (sealed either way).
+    pair("protection_toggle", base()?, |db| {
+        db.entry_mut(EMAIL)
+            .context("Email")?
+            .set_unprotected("otp", "otpauth://totp/Email?secret=JBSWY3DPEHPK3PXP");
+        db.entry_mut(BANK)
+            .context("Bank")?
+            .set_unprotected(fields::PASSWORD, "old-password");
+        stamp(db, EMAIL, EDITED);
+        stamp(db, BANK, EDITED);
+        Ok(())
+    })?;
+
+    // Bank gains a URL override (a command line).
+    pair("override_url", base()?, |db| {
+        db.entry_mut(BANK).context("Bank")?.override_url =
+            Some("cmd://firefox --private-window {URL}".into());
+        stamp(db, BANK, EDITED);
+        Ok(())
+    })?;
+
+    // A recycle bin exists, and Email is moved into it. Default mode reads
+    // that as a removal; --include-recycle-bin shows the move.
+    pair(
+        "trash_entry",
+        {
+            let mut db = base()?;
+            db.root_mut().add_group_with_id(RECYCLE_BIN)?.name = "Recycle Bin".into();
+            db.meta.recyclebin_enabled = Some(true);
+            db.meta.recyclebin_uuid = Some(RECYCLE_BIN.uuid());
+            freeze_all_times(&mut db, CREATED);
+            db
+        },
+        |db| {
+            db.entry_mut(EMAIL).context("Email")?.move_to(RECYCLE_BIN)?;
+            Ok(())
+        },
+    )?;
+
+    // A recycle-bin UUID naming the root group (a malformed but real-world
+    // file): it must not hide the vault. Bank's UserName changes.
+    pair(
+        "recycle_bin_root",
+        {
+            let mut db = base()?;
+            db.meta.recyclebin_uuid = Some(ROOT.uuid());
+            db
+        },
+        |db| {
+            db.entry_mut(BANK)
+                .context("Bank")?
+                .set_unprotected(fields::USERNAME, "bob");
+            stamp(db, BANK, EDITED);
+            Ok(())
+        },
+    )?;
+
+    // The KDF is weakened: Argon2id memory and passes both lowered.
+    pair(
+        "kdf_downgrade",
+        {
+            let mut db = base()?;
+            db.config.kdf_config = cheap_kdf(2 << 20, 4);
+            db
+        },
+        |db| {
+            db.config.kdf_config = cheap_kdf(1 << 20, 2);
+            Ok(())
+        },
+    )?;
+
+    // A vault with no password: opened by its key file alone.
+    {
+        let dir = Path::new(FIXTURES_ROOT).join("keyfile_only");
+        fs::create_dir_all(&dir)?;
+        fs::write(dir.join("vault.key"), KEY_FILE)?;
+        let key = DatabaseKey::new().with_keyfile(&mut &KEY_FILE[..])?;
+        save_with(&base()?, &dir.join("vault.kdbx"), key)?;
+        println!("  keyfile_only/");
+    }
 
     println!("Done.");
     Ok(())

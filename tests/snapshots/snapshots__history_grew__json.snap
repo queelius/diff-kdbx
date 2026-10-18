@@ -173,7 +173,7 @@ expression: "render_json(&cs, &JsonOptions::default())"
           "before": null,
           "after": {
             "type": "time",
-            "value": "2026-10-18T11:39:47Z"
+            "value": "2026-01-01T09:00:00Z"
           }
         },
         {

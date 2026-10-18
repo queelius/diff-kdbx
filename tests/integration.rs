@@ -294,3 +294,195 @@ fn cross_version_diff_warns() {
             "warning: KDBX version differs: 4.0 -> 4.1",
         ));
 }
+
+/// A moved-and-edited entry is one record, counted once.
+#[test]
+fn move_and_edit_is_one_record() {
+    let (code, out) = pair("move_and_edit", &[]);
+    assert_eq!(code, 1);
+    assert!(
+        out.contains(
+            "~ ENTRY /Personal/VPN (moved from /Work/VPN)\n  ~ URL: https://vpn.example -> https://vpn2.example\n"
+        ),
+        "{out}"
+    );
+    assert!(out.contains("entries +0/-0/~1 (1 moved)"), "{out}");
+    assert_eq!(out.matches("ENTRY").count(), 1, "{out}");
+}
+
+/// A moved-and-renamed group is one record; its entries ride along.
+#[test]
+fn move_and_rename_group_is_one_record() {
+    let (code, out) = pair("move_and_rename_group", &[]);
+    assert_eq!(code, 1);
+    assert!(
+        out.contains("~ GROUP /Personal/Office/ (moved from /Work/)\n  ~ Name: Work -> Office\n"),
+        "{out}"
+    );
+    assert!(out.contains("entries +0/-0/~0 (0 moved)"), "{out}");
+}
+
+/// A protected Title stays plain: it is the entry's address.
+#[test]
+fn protected_title_stays_an_address() {
+    let (_, out) = pair("protected_title", &[]);
+    assert!(
+        out.contains("~ ENTRY /Personal/Bank\n  ~ Title: Bank -> Bank (protected)\n"),
+        "{out}"
+    );
+    diff_cmd()
+        .args(["--textconv", "tests/fixtures/protected_title/after.kdbx"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ENTRY /Personal/Bank [uuid:"))
+        .stdout(predicate::str::contains("  Title: Bank (protected)\n"));
+}
+
+/// Multi-line Notes that imitate structural lines cannot forge one, in the
+/// diff or in the dump, and still diff line by line.
+#[test]
+fn notes_cannot_forge_structural_lines() {
+    let (_, out) = pair("notes_injection", &[]);
+    let dump = String::from_utf8(
+        diff_cmd()
+            .args(["--textconv", "tests/fixtures/notes_injection/after.kdbx"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    for (text, structural) in [
+        (&out, ["+ ", "- ", "~ "]),
+        (&dump, ["GROUP", "ENTRY", "DATA"]),
+    ] {
+        let forged: Vec<&str> = text
+            .lines()
+            .filter(|l| structural.iter().any(|s| l.starts_with(s)) && l.contains("Forged"))
+            .collect();
+        assert!(forged.is_empty(), "{forged:?}\n{text}");
+    }
+    assert!(out.contains("      | + ENTRY /Forged\n"), "{out}");
+    assert!(dump.contains("    | + ENTRY /Forged\n"), "{dump}");
+}
+
+/// Turning protection off is visible even when the value is unchanged.
+#[test]
+fn protection_toggle_is_reported() {
+    let (code, out) = pair("protection_toggle", &[]);
+    assert_eq!(code, 1);
+    assert!(
+        predicate::str::is_match(
+            r"  ~ Password: <sealed:([0-9a-f]{8})> -> <sealed:([0-9a-f]{8})> \(unprotected\)\n"
+        )
+        .unwrap()
+        .eval(&out),
+        "{out}"
+    );
+    assert!(
+        out.contains("  ~ otp: <sealed:") && out.contains("-> otpauth://totp/Email?secret="),
+        "{out}"
+    );
+}
+
+#[test]
+fn override_url_is_reported() {
+    let (_, out) = pair("override_url", &[]);
+    assert!(
+        out.contains("  + OverrideURL: cmd://firefox --private-window {URL}\n"),
+        "{out}"
+    );
+}
+
+/// At the history cap, a new edit adds one history item and trims the
+/// oldest: one item removed, one added, nothing else in history.
+#[test]
+fn history_at_cap_is_one_removal_and_one_addition() {
+    let (_, out) = pair("history_at_cap", &[]);
+    let history: Vec<&str> = out.lines().filter(|l| l.contains("History[")).collect();
+    assert!(!history.is_empty());
+    assert!(
+        history
+            .iter()
+            .all(|l| l.starts_with("  - History[2026-01-01T09:00:00Z].")
+                || l.starts_with("  + History[2026-01-04T09:00:00Z].")),
+        "{out}"
+    );
+    assert!(out.contains("  + History[2026-01-04T09:00:00Z].URL: https://bank.example/v4\n"));
+}
+
+/// A recycle-bin UUID naming the root does not hide the vault.
+#[test]
+fn recycle_bin_naming_the_root_hides_nothing() {
+    let (code, out) = pair("recycle_bin_root", &[]);
+    assert_eq!(code, 1);
+    assert!(
+        out.contains("~ ENTRY /Personal/Bank\n  ~ UserName: alice -> bob\n"),
+        "{out}"
+    );
+}
+
+/// Moving an entry to the recycle bin reads as a removal by default, and as
+/// a move with --include-recycle-bin.
+#[test]
+fn trashing_an_entry() {
+    let (_, out) = pair("trash_entry", &[]);
+    assert!(out.contains("- ENTRY /Personal/Email\n"), "{out}");
+    let (_, out) = pair("trash_entry", &["--include-recycle-bin"]);
+    assert!(
+        out.contains("~ ENTRY /Recycle Bin/Email (moved from /Personal/Email)\n"),
+        "{out}"
+    );
+}
+
+/// A weakened KDF is reported as header changes and typed warnings.
+#[test]
+fn kdf_downgrade_warns() {
+    let (code, out) = pair("kdf_downgrade", &[]);
+    assert_eq!(code, 1);
+    assert!(
+        out.contains("warning: KDF weakened: memory lowered from 2097152 to 1048576 bytes\n"),
+        "{out}"
+    );
+    assert!(
+        out.contains("warning: KDF weakened: iterations lowered from 4 to 2\n"),
+        "{out}"
+    );
+    assert!(
+        out.contains("DATABASE\n  ~ KdfMemory: 2097152 -> 1048576\n  ~ KdfIterations: 4 -> 2\n"),
+        "{out}"
+    );
+    let json = diff_cmd()
+        .args([
+            "--format=json",
+            "tests/fixtures/kdf_downgrade/before.kdbx",
+            "tests/fixtures/kdf_downgrade/after.kdbx",
+        ])
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(v["warnings"][0]["kind"], "kdf_weakened");
+    assert_eq!(v["warnings"][0]["weakening"]["aspect"], "memory_lowered");
+    // The fingerprint key is never weaker than the stronger vault.
+    assert_eq!(v["fingerprint_key"]["params"]["iterations"], 4);
+}
+
+/// A vault without a password opens with its key file alone.
+#[test]
+fn keyfile_only_vault_opens_with_its_key_file() {
+    let kf = "tests/fixtures/keyfile_only/vault.key";
+    let vault = "tests/fixtures/keyfile_only/vault.kdbx";
+    Command::cargo_bin("diff-kdbx")
+        .unwrap()
+        .env_remove("KDBX_DIFF_PASSWORD")
+        .args(["--key-file", kf, "--textconv", vault])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ENTRY /Personal/Bank [uuid:"));
+    Command::cargo_bin("diff-kdbx")
+        .unwrap()
+        .env("KDBX_DIFF_PASSWORD", PW)
+        .args(["--no-password", "--key-file", kf, vault, vault])
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains("(no changes)"));
+}

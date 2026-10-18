@@ -115,12 +115,23 @@ fn diff_between_fixtures_shows_textconv_output() {
         "git diff fell back to binary-files-differ; textconv driver may not have been invoked.\nstdout:\n{}",
         stdout
     );
-    // The "after" fixture has a Chase entry. The textconv dump should include it.
+    // The "after" fixture adds GitHub to Work: git's line diff of the two
+    // dumps shows its block as added lines, and nothing else changed.
     assert!(
-        stdout.contains("ENTRY") || stdout.contains("Chase"),
-        "git diff output didn't contain expected entry markers.\nstdout:\n{}",
+        stdout.contains("\n+ENTRY /Work/GitHub [uuid:00000014-d1ff-4000-8000-000000000000]\n"),
+        "git diff output didn't contain the added entry.\nstdout:\n{}",
         stdout
     );
+    assert!(
+        stdout.contains("\n+  Password: <sealed:"),
+        "the added entry's password is sealed.\nstdout:\n{}",
+        stdout
+    );
+    let removed: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.starts_with('-') && !l.starts_with("---"))
+        .collect();
+    assert!(removed.is_empty(), "unexpected removed lines: {removed:?}");
 }
 
 #[test]
@@ -162,7 +173,7 @@ fn git_log_p_shows_textconv_for_each_commit() {
 
     copy_fixture(repo, "add_entry/after.kdbx", "vault.kdbx");
     git(repo, &["add", "vault.kdbx"]);
-    git(repo, &["commit", "-q", "-m", "v2: add Chase entry"]);
+    git(repo, &["commit", "-q", "-m", "v2: add GitHub entry"]);
 
     // git log -p over the whole history should include the textconv'd diff
     let out = git(repo, &["log", "-p", "--", "vault.kdbx"]);
@@ -173,7 +184,7 @@ fn git_log_p_shows_textconv_for_each_commit() {
         "log missing v1 commit message"
     );
     assert!(
-        stdout.contains("v2: add Chase entry"),
+        stdout.contains("v2: add GitHub entry"),
         "log missing v2 commit message"
     );
     assert!(

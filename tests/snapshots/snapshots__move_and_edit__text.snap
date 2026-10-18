@@ -1,0 +1,7 @@
+---
+source: tests/snapshots.rs
+expression: render_text(&cs)
+---
+summary: entries +0/-0/~1 (1 moved), groups +0/-0/~0 (0 moved), properties 1, database 0, suppressed 4
+~ ENTRY /Personal/VPN (moved from /Work/VPN)
+  ~ URL: https://vpn.example -> https://vpn2.example

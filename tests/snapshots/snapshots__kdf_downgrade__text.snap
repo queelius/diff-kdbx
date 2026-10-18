@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: render_text(&cs)
+---
+summary: entries +0/-0/~0 (0 moved), groups +0/-0/~0 (0 moved), properties 0, database 2, suppressed 0
+warning: KDF weakened: memory lowered from 2097152 to 1048576 bytes
+warning: KDF weakened: iterations lowered from 4 to 2
+DATABASE
+  ~ KdfMemory: 2097152 -> 1048576
+  ~ KdfIterations: 4 -> 2

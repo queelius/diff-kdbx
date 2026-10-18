@@ -1,0 +1,7 @@
+---
+source: tests/snapshots.rs
+expression: render_text(&cs)
+---
+summary: entries +0/-0/~0 (0 moved), groups +0/-0/~1 (1 moved), properties 1, database 0, suppressed 1
+~ GROUP /Personal/Office/ (moved from /Work/)
+  ~ Name: Work -> Office

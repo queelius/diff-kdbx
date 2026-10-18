@@ -10,5 +10,5 @@ summary: entries +0/-0/~1 (0 moved), groups +0/-0/~0 (0 moved), properties 8, da
   + History[2026-01-01T09:00:00Z].Password: <sealed:83b20c03>
   + History[2026-01-01T09:00:00Z].URL: https://bank.example
   + History[2026-01-01T09:00:00Z].QualityCheck: true
-  + History[2026-01-01T09:00:00Z].CreationTime: 2026-10-18T11:39:47Z
+  + History[2026-01-01T09:00:00Z].CreationTime: 2026-01-01T09:00:00Z
   + History[2026-01-01T09:00:00Z].Expires: false
