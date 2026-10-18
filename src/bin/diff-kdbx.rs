@@ -313,8 +313,10 @@ fn run_dump(cli: &Cli, path: &Path, interactive: bool) -> Result<u8> {
 
 /// Two files: one fingerprint key for both, derived from A's key material
 /// and salted with A's root UUID, so unchanged secrets compare equal even
-/// when B's master key differs. Its parameters are the stronger of the two
-/// vaults' own, so the key is never cheaper to attack than either vault.
+/// when B's master key differs. Its parameters are the costlier of the two
+/// vaults' (`DeriveParams::stronger`, comparing memory x passes as a whole),
+/// so the key is never cheaper to attack than either vault and no costlier
+/// than the stronger one.
 fn run_diff(cli: &Cli, a_path: &Path, b_path: &Path) -> Result<u8> {
     let (secret_a, secret_b) = if cli.separate_keys {
         let a = Secret::resolve(
@@ -351,12 +353,7 @@ fn run_diff(cli: &Cli, a_path: &Path, b_path: &Path) -> Result<u8> {
         }
     })?;
 
-    let (pa, pb) = (params_of(&db_a), params_of(&db_b));
-    let params = DeriveParams::new(
-        pa.memory_kib().max(pb.memory_kib()),
-        pa.iterations().max(pb.iterations()),
-        pa.lanes().max(pb.lanes()),
-    );
+    let params = params_of(&db_a).stronger(params_of(&db_b));
     let salt = db_a.root().id().uuid();
     let key = derive_key(&secret_a, salt, &params)?;
     let seal = sealing(cli.show_secrets, &key);

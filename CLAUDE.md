@@ -101,10 +101,11 @@ External dependencies for the full suite: `cargo` and `git`.
 
 ## Notes
 
-- Every CLI invocation derives a fingerprint key with Argon2id at no less
-  than the vault's own KDF cost (and the 64 MiB / 3 / 1 floor). Fixtures use
-  a cheap KDF for that reason; `legacy_kdbx40/` (keepass-rs's default KDF)
-  is the slow one.
+- Every CLI invocation derives a fingerprint key with Argon2id: the vault's
+  own Argon2 parameters when they cost (memory x passes) at least as much as
+  the 64 MiB x 3 floor, else the floor (`DeriveParams`, kdbx-core). A
+  two-file diff takes `DeriveParams::stronger` of both vaults. Fixtures use a
+  cheap KDF, so tests derive at the floor.
 - keepass 0.15 saves KDBX 4.1 only, so `tests/fixtures/legacy_kdbx40/` is
   frozen, not regenerated.
 - keepass 0.15 keeps history items crate-private except `add_entry` and

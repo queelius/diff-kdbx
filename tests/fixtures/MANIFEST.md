@@ -22,9 +22,9 @@ password**, **contents**, and **regeneration**.
 - **Format.** keepass 0.13+ can only write KDBX 4.1, so every synthetic fixture
   is KDBX 4.1. KDBX 4.0 read coverage comes from the frozen `legacy_kdbx40/`.
 - **Cheap KDF.** Every synthetic vault uses Argon2id with 1 MiB, 2 passes and
-  1 lane. The CLI derives its fingerprint key with parameters no weaker than
-  the vault's own (and never below 64 MiB / 3 passes / 1 lane), so a costly
-  fixture KDF would make every test invocation pay for it. `kdf_downgrade/`
+  1 lane, so opening it is fast and the CLI's fingerprint key derivation runs
+  at its floor (64 MiB x 3 passes); a vault whose KDF costs more than the
+  floor makes every derivation cost as much as its own. `kdf_downgrade/`
   varies the KDF on purpose.
 - **Frozen times.** Every node's seven `<Times>` values are fixed, creation
   included (the 0.2 generator kept keepass's "now" creation time on entries,
@@ -101,9 +101,8 @@ remote round-trip suites; `tests/cli.rs` builds its own vaults.
 | Contents | KDBX 4.0. Unnamed root group with one entry: `Title=Test Entry`, `UserName=alice`, `Password=hunter2` (protected), `URL=https://example.com`. Random (unfixed) UUIDs. |
 | Regen | None. Do not regenerate; it exists because the current generator cannot produce it. |
 
-Its KDF is keepass-rs's default (Argon2d, 1 MiB, 50 passes, 4 lanes), so the
-CLI's fingerprint key derivation for it runs 50 passes over 64 MiB: the tests
-that open it are the slowest in the suite.
+Its KDF is keepass-rs's default (Argon2d, 1 MiB, 50 passes, 4 lanes), which
+costs less than the fingerprint-key floor, so its key derives at the floor.
 
 Consumers: `integration.rs::legacy_kdbx40_is_readable` (4.0 read coverage),
 `cross_version_diff_warns` (4.0 vs 4.1, the version-mismatch warning), and

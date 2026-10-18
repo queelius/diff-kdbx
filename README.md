@@ -231,15 +231,18 @@ attachment's content is replaced by a **keyed fingerprint**,
 HMAC-SHA256 under a per-vault key.
 
 The key is derived with Argon2id from your password and key file, salted with
-the vault's root group UUID, with parameters never below the vault's own KDF
-(nor below 64 MiB / 3 passes / 1 lane). An unkeyed hash of a short secret is
+the vault's root group UUID. The parameters are the vault's own Argon2 memory,
+passes and lanes when their cost (memory x passes) is at least that of a
+floor of 64 MiB x 3 passes, and the floor otherwise (AES-KDF vaults always
+get the floor). An unkeyed hash of a short secret is
 a lookup table (a 4-digit PIN falls in 10,000 tries); a keyed fingerprint is
 only as attackable as the vault itself. Consequences:
 
 - Fingerprints are stable across runs (git textconv dumps each blob in a
   separate process), so an unchanged secret dumps identically.
-- A two-file diff derives one key from file A (with the stronger of the two
-  vaults' parameters), so an unchanged secret compares equal even when the
+- A two-file diff derives one key from file A's key material and root UUID,
+  with the costlier of the two vaults' parameters (whole cost, not a
+  per-component mix), so an unchanged secret compares equal even when the
   master password changed between the two; the master-key change itself is
   reported (`MasterKeyChanged`).
 - In textconv output each blob uses its own key, so changing the master

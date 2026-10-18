@@ -43,10 +43,10 @@ fixtures are managed.
 External dependencies: `cargo`, and `git` for the git-driver and roundtrip
 suites. No `gh`, no network.
 
-Every CLI invocation derives a fingerprint key with Argon2id at no less than
-the vault's own KDF cost and the 64 MiB / 3 passes / 1 lane floor, so the
-fixtures use a deliberately cheap KDF. The frozen `legacy_kdbx40/` vault uses
-keepass-rs's default KDF and makes the tests that open it the slowest.
+Every CLI invocation derives a fingerprint key with Argon2id: the vault's own
+parameters when they cost (memory x passes) at least the 64 MiB x 3 floor,
+else the floor. The fixtures use a deliberately cheap KDF, so tests derive at
+the floor.
 
 ## Fixtures
 

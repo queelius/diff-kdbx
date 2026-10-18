@@ -25,7 +25,10 @@ fn cmd() -> Command {
 
 /// A one-entry vault: Root / Bank (Password "hunter2", protected).
 fn bank_vault(dir: &Path, name: &str, key: DatabaseKey) -> PathBuf {
-    let mut db = common::cheap_db(Uuid::from_u128(ROOT));
+    bank_vault_with(dir, name, key, common::cheap_db(Uuid::from_u128(ROOT)))
+}
+
+fn bank_vault_with(dir: &Path, name: &str, key: DatabaseKey, mut db: keepass::Database) -> PathBuf {
     db.root_mut().name = "Root".into();
     {
         let mut root = db.root_mut();
@@ -271,4 +274,34 @@ fn show_secrets_reveals_and_warns_on_a_pipe() {
 #[test]
 fn color_flag_is_gone() {
     cmd().args(["--color", "a.kdbx", "b.kdbx"]).assert().code(2);
+}
+
+/// A two-file diff derives its key with the costlier of the two vaults'
+/// parameters as a whole (memory x passes), never a per-component mix that
+/// neither vault uses.
+#[test]
+fn two_file_key_uses_the_stronger_vaults_parameters() {
+    let tmp = TempDir::new().unwrap();
+    let a = bank_vault(tmp.path(), "a.kdbx", DatabaseKey::new().with_password("pw"));
+    // 32 MiB x 8 passes costs more than the 64 MiB x 3 floor.
+    let strong = common::db_with_kdf(Uuid::from_u128(ROOT), 32 << 20, 8);
+    let b = bank_vault_with(
+        tmp.path(),
+        "b.kdbx",
+        DatabaseKey::new().with_password("pw"),
+        strong,
+    );
+    for (x, y) in [(&a, &b), (&b, &a)] {
+        let out = cmd()
+            .env("KDBX_DIFF_PASSWORD", "pw")
+            .arg("--format=json")
+            .args([x, y])
+            .output()
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(
+            v["fingerprint_key"]["params"],
+            serde_json::json!({"memory_kib": 32768, "iterations": 8, "lanes": 1})
+        );
+    }
 }

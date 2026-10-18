@@ -56,8 +56,8 @@ line replaces them.
   fingerprint sealing; `--show-secrets` captures plaintext instead.
 - Fingerprint keys are derived with Argon2id from the vault's key material,
   never cheaper than the vault's own KDF: per file for `--textconv` and
-  `--dump`, once from side A (with the stronger parameters of both files)
-  for a two-file diff.
+  `--dump`, once from side A for a two-file diff, with the costlier of both
+  files' parameters (`DeriveParams::stronger`, whole cost memory x passes).
 - Key-file-only vaults work: a key file alone is the key when no password
   source exists, an empty interactive password with `--key-file` means none,
   and `--no-password` says so explicitly.

@@ -45,10 +45,16 @@ pub fn open(relative: &str) -> Snapshot {
 /// the fingerprint key derivation runs at the 64 MiB / 3 / 1 floor and the
 /// tests stay fast.
 pub fn cheap_db(root: uuid::Uuid) -> keepass::Database {
+    db_with_kdf(root, 1 << 20, 2)
+}
+
+/// A new database whose KDF is Argon2id with `memory` bytes and `iterations`
+/// passes on one lane.
+pub fn db_with_kdf(root: uuid::Uuid, memory: u64, iterations: u64) -> keepass::Database {
     let mut db = keepass::Database::new_with_root_id(keepass::db::GroupId::from_uuid(root));
     db.config.kdf_config = keepass::config::KdfConfig::Argon2id {
-        iterations: 2,
-        memory: 1 << 20,
+        iterations,
+        memory,
         parallelism: 1,
         version: rust_argon2::Version::Version13,
     };

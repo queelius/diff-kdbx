@@ -462,8 +462,11 @@ fn kdf_downgrade_warns() {
     let v: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
     assert_eq!(v["warnings"][0]["kind"], "kdf_weakened");
     assert_eq!(v["warnings"][0]["weakening"]["aspect"], "memory_lowered");
-    // The fingerprint key is never weaker than the stronger vault.
-    assert_eq!(v["fingerprint_key"]["params"]["iterations"], 4);
+    // Both vaults cost less than the floor, so the key derives at the floor.
+    assert_eq!(
+        v["fingerprint_key"]["params"],
+        serde_json::json!({"memory_kib": 65536, "iterations": 3, "lanes": 1})
+    );
 }
 
 /// A vault without a password opens with its key file alone.
