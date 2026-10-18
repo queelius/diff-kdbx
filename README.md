@@ -169,7 +169,9 @@ custom data, group settings, `<Meta>` settings, the KDF and ciphers) is in
 the dump.
 
 **Grammar.** Every line reads back unambiguously, which matters because
-the dump is what git diffs. Closed-set names are bare: the five standard
+the dump is what git diffs. The complete production list for both formats
+is [docs/FORMAT.md](https://github.com/queelius/diff-kdbx/blob/main/docs/FORMAT.md)
+(also in the crate package); in short: Closed-set names are bare: the five standard
 fields (`Title`, `UserName`, `Password`, `URL`, `Notes`), typed keys
 (`CreationTime`, `ProtectPassword`, `Kdf`, ...), UUIDs, timestamps, numbers,
 `true`/`false`, `<sealed:...>`. Every vault-controlled string printed next to
