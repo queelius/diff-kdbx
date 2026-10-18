@@ -114,7 +114,12 @@ pub enum FieldName {
 }
 
 /// Identifies a history item within its entry: its last-modification time,
-/// and an index among items sharing that time (0-based, document order).
+/// and its index among the items sharing that time in its own snapshot
+/// (0-based, document order). In a diff, a removed item is numbered in the
+/// before snapshot and an added or modified item in the after snapshot, so a
+/// label always matches that snapshot's dump. The text form is
+/// `History[<time>]` for index 0 and `History[<time>#N]` (N = index + 1)
+/// otherwise, with `unknown` for a missing time.
 ///
 /// Keying by time rather than by position makes trimming at the history cap
 /// and pushing a new item two precise changes (one item removed, one added)
@@ -124,7 +129,8 @@ pub enum FieldName {
 pub struct HistoryKey {
     /// The item's last-modification time (`None` when absent).
     pub modified: Option<Timestamp>,
-    /// Index among the entry's items with the same `modified` (0-based).
+    /// Position among the items with the same `modified` in the item's own
+    /// snapshot (0-based).
     pub index: usize,
 }
 
@@ -948,47 +954,58 @@ pub(crate) fn history_item_properties(key: HistoryKey, item: &Entry) -> Property
 /// are immutable snapshots, so within a group, items equal in content pair
 /// first (the i-th equal item on one side with the i-th on the other) and
 /// report nothing; the remaining items pair by position, and leftovers are
-/// additions or removals. Keys number the reported items of a group
-/// (`index` 0, 1, ...), so they need not equal the items' positions in a
-/// dump. The rule is symmetric: swapping the sides swaps before and after.
+/// additions or removals.
+///
+/// Each key's `index` is the item's position among the items sharing its
+/// time in its own snapshot, so diff labels agree with the dumps: a removed
+/// item is numbered in the before snapshot, an added or modified item in the
+/// after snapshot. A removal and a modification can therefore carry the same
+/// index (they name items of different snapshots). The pairing is symmetric;
+/// swapping the sides swaps before and after (and renumbers a modified item
+/// in its new after snapshot).
 pub(crate) fn history_pairs<'a>(
     before: &'a [Entry],
     after: &'a [Entry],
 ) -> Vec<(HistoryKey, Option<&'a Entry>, Option<&'a Entry>)> {
-    type Groups<'a> = BTreeMap<Option<Timestamp>, (Vec<&'a Entry>, Vec<&'a Entry>)>;
+    type Side<'a> = Vec<(usize, &'a Entry)>;
+    type Groups<'a> = BTreeMap<Option<Timestamp>, (Side<'a>, Side<'a>)>;
     let mut groups: Groups<'a> = BTreeMap::new();
     for item in before {
         let group = groups.entry(item.times.last_modification).or_default();
-        group.0.push(item);
+        group.0.push((group.0.len(), item));
     }
     for item in after {
         let group = groups.entry(item.times.last_modification).or_default();
-        group.1.push(item);
+        group.1.push((group.1.len(), item));
     }
     let mut out = Vec::new();
     for (modified, (xs, ys)) in groups {
         let mut used = vec![false; ys.len()];
         let mut unpaired_before = Vec::new();
         for x in xs {
-            match (0..ys.len()).find(|&j| !used[j] && ys[j] == x) {
+            match (0..ys.len()).find(|&j| !used[j] && ys[j].1 == x.1) {
                 Some(j) => used[j] = true,
                 None => unpaired_before.push(x),
             }
         }
-        let unpaired_after: Vec<&Entry> = ys
-            .iter()
-            .zip(&used)
-            .filter(|(_, used)| !**used)
-            .map(|(y, _)| *y)
+        let unpaired_after: Side<'a> = ys
+            .into_iter()
+            .zip(used)
+            .filter(|(_, used)| !used)
+            .map(|(y, _)| y)
             .collect();
-        for index in 0..unpaired_before.len().max(unpaired_after.len()) {
+        for k in 0..unpaired_before.len().max(unpaired_after.len()) {
+            let (x, y) = (unpaired_before.get(k), unpaired_after.get(k));
+            // Numbered in the after snapshot when the item exists there.
+            let index = y.or(x).map_or(0, |(i, _)| *i);
             out.push((
                 HistoryKey::new(modified, index),
-                unpaired_before.get(index).copied(),
-                unpaired_after.get(index).copied(),
+                x.map(|(_, e)| *e),
+                y.map(|(_, e)| *e),
             ));
         }
     }
+    out.sort_by_key(|(key, _, _)| *key);
     out
 }
 

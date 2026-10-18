@@ -743,13 +743,14 @@ fn history_items_sharing_a_time_match_by_content_first() {
         edit(&mut b, id(0x11)).history = vec![item("u2"), item("u3"), item("u4")];
         let cs = compute(&a, &b, &DiffOptions::default());
         let changes = props(&cs, id(0x11));
-        // The trimmed u1 and the added u4 pair up as one changed item; u2 and
-        // u3 match by content and report nothing.
+        // The trimmed u1 and the added u4 pair up as one changed item, numbered
+        // where u4 sits in the after snapshot; u2 and u3 match by content and
+        // report nothing.
         assert_eq!(changes.len(), 1, "{changes:#?}");
         assert_eq!(
             changes[0].property,
             Property::History {
-                item: HistoryKey::new(when, 0),
+                item: HistoryKey::new(when, 2),
                 property: Box::new(Property::Field(FieldName::new("URL"))),
             }
         );
@@ -759,5 +760,49 @@ fn history_items_sharing_a_time_match_by_content_first() {
         let mut c = a.clone();
         edit(&mut c, id(0x11)).history.reverse();
         assert!(compute(&a, &c, &DiffOptions::default()).is_empty());
+    }
+}
+
+/// History labels agree with the dumps: a removed item's index is its
+/// position (among items sharing its time) in the before snapshot, an added
+/// or a modified item's in the after snapshot.
+#[test]
+fn history_labels_match_each_sides_dump() {
+    use crate::render::ValueText;
+    use crate::{DumpOptions, dump};
+    let item = |url: &str| {
+        let mut h = titled(0x11, "Bank").with_field("URL", Field::plain(url));
+        h.times.last_modification = Some(t(0));
+        h
+    };
+    let cases: [(&[&str], &[&str]); 3] = [
+        (&["A", "B"], &["B", "C"]),
+        (&["A", "B", "C"], &["B"]),
+        (&["B"], &["A", "B", "C"]),
+    ];
+    for (before, after) in cases {
+        let mut a = base();
+        edit(&mut a, id(0x11)).history = before.iter().map(|u| item(u)).collect();
+        let mut b = a.clone();
+        edit(&mut b, id(0x11)).history = after.iter().map(|u| item(u)).collect();
+        let (dump_a, dump_b) = (
+            dump(&a, &DumpOptions::default()),
+            dump(&b, &DumpOptions::default()),
+        );
+        let cs = compute(&a, &b, &DiffOptions::default());
+        let changes = props(&cs, id(0x11));
+        assert!(!changes.is_empty());
+        for c in changes {
+            let (side, dumped) = match &c.after {
+                Some(v) => (v, &dump_b),
+                None => (c.before.as_ref().unwrap(), &dump_a),
+            };
+            let mut line = String::new();
+            ValueText::of(&c.property, side).write(&mut line, "  ", "", &c.property.to_string());
+            assert!(
+                dumped.contains(&line),
+                "{before:?} -> {after:?}: {line:?} not in\n{dumped}"
+            );
+        }
     }
 }

@@ -17,7 +17,7 @@ use diff_kdbx::kdbx_core::model::{
 };
 use diff_kdbx::{
     Change, ChangeSet, DiffOptions, DiffWarning, DumpOptions, KdfWeakening, NodeChange, NodeStatus,
-    Noise, PropertyChange, RecycleBin, compute, dump,
+    Noise, Property, PropertyChange, RecycleBin, compute, dump,
 };
 use proptest::prelude::*;
 use uuid::Uuid;
@@ -208,14 +208,27 @@ fn build(world: &World) -> Snapshot {
     snap
 }
 
+/// A property's label, with a history item's index dropped: an item is
+/// numbered in its own snapshot, so a modified history item is renumbered in
+/// its new after snapshot when the sides swap. Changes are then compared as
+/// sorted multisets.
+fn label(p: &Property) -> String {
+    match p {
+        Property::History { item, property, .. } => {
+            format!("History[{:?}].{}", item.modified, label(property))
+        }
+        other => other.to_string(),
+    }
+}
+
 fn swap(c: &PropertyChange) -> (String, Option<String>, Option<String>) {
     let s = |v: &Option<diff_kdbx::Shown>| v.as_ref().map(|v| format!("{v:?}"));
-    (c.property.to_string(), s(&c.after), s(&c.before))
+    (label(&c.property), s(&c.after), s(&c.before))
 }
 
 fn plain(c: &PropertyChange) -> (String, Option<String>, Option<String>) {
     let s = |v: &Option<diff_kdbx::Shown>| v.as_ref().map(|v| format!("{v:?}"));
-    (c.property.to_string(), s(&c.before), s(&c.after))
+    (label(&c.property), s(&c.before), s(&c.after))
 }
 
 fn records(cs: &ChangeSet) -> BTreeMap<(u8, Uuid), &NodeChange> {
@@ -270,8 +283,10 @@ fn assert_mirror(ab: &ChangeSet, ba: &ChangeSet) -> Result<(), TestCaseError> {
                 if x.path.is_some() && y.path.is_some() {
                     prop_assert_eq!(mx.is_some(), my.is_some());
                 }
-                let cx: Vec<_> = cx.iter().map(swap).collect();
-                let cy: Vec<_> = cy.iter().map(plain).collect();
+                let mut cx: Vec<_> = cx.iter().map(swap).collect();
+                let mut cy: Vec<_> = cy.iter().map(plain).collect();
+                cx.sort();
+                cy.sort();
                 prop_assert_eq!(cx, cy);
             }
             other => prop_assert!(false, "not mirrored: {:?}", other),
