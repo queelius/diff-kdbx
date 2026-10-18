@@ -115,7 +115,7 @@ enum Command {
         entry: String,
         /// Derivation parameters, in their recorded form
         /// argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes> (default: the vault's own).
-        #[arg(long, value_name = "PARAMS", value_parser = parse_params)]
+        #[arg(long, value_name = "PARAMS")]
         params: Option<DeriveParams>,
         /// Salt: the root group UUID of the vault whose key was recorded
         /// (default: this vault's root group UUID).
@@ -465,36 +465,6 @@ fn run_fingerprint(
     Ok(0)
 }
 
-/// The recorded (`Display`) form of [`DeriveParams`]. kdbx-core prints it but
-/// has no parser, so the grammar is read here: exactly
-/// `argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes>`, and nothing below the floor
-/// (no fingerprint is ever derived with such parameters).
-fn parse_params(s: &str) -> std::result::Result<DeriveParams, String> {
-    const FORM: &str = "argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes>";
-    let malformed = || format!("expected {FORM}");
-    let rest = s.strip_prefix("argon2id$v=19$").ok_or_else(malformed)?;
-    let mut parts = rest.split(',');
-    let mut component = |name: &str| -> std::result::Result<u32, String> {
-        parts
-            .next()
-            .and_then(|p| p.strip_prefix(name))
-            .and_then(|n| n.parse().ok())
-            .ok_or_else(malformed)
-    };
-    let (m, t, p) = (component("m=")?, component("t=")?, component("p=")?);
-    if parts.next().is_some() {
-        return Err(malformed());
-    }
-    let params = DeriveParams::new(m, t, p);
-    if (params.memory_kib(), params.iterations(), params.lanes()) != (m, t, p) {
-        return Err(format!(
-            "below the floor {}: no fingerprint is derived with these parameters",
-            DeriveParams::FLOOR
-        ));
-    }
-    Ok(params)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -504,13 +474,5 @@ mod tests {
         assert_eq!(guarded(|| Ok(1)), 1);
         assert_eq!(guarded(|| bail!("boom")), 2);
         assert_eq!(guarded(|| panic!("a bug")), 2);
-    }
-
-    #[test]
-    fn params_round_trip_through_their_recorded_form() {
-        for params in [DeriveParams::FLOOR, DeriveParams::new(32 * 1024, 8, 4)] {
-            assert_eq!(parse_params(&params.to_string()), Ok(params));
-        }
-        assert!(parse_params("argon2id$v=19$m=65536,t=3,p=1,x=1").is_err());
     }
 }
