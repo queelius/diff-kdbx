@@ -170,10 +170,10 @@ fn dump_entry(
 
     // Modification timestamp (omitted in --strict mode to reduce noise).
     // Times.last_modification is pub Option<NaiveDateTime> in keepass 0.12.
-    if !opts.strict {
-        if let Some(t) = entry_modification_time(er) {
-            let _ = writeln!(out, "  modified: {}", t);
-        }
+    if !opts.strict
+        && let Some(t) = entry_modification_time(er)
+    {
+        let _ = writeln!(out, "  modified: {}", t);
     }
 }
 

@@ -37,8 +37,17 @@ fn render_summary(s: &Summary, out: &mut String) {
 }
 
 fn render_warnings(warnings: &[crate::change_set::DiffWarning], out: &mut String) {
+    use crate::change_set::DiffWarning;
     for w in warnings {
-        let _ = writeln!(out, "warning: {:?}", w);
+        let _ = match w {
+            DiffWarning::VersionMismatch { a, b } => {
+                writeln!(out, "warning: KDBX version differs: {a} -> {b}")
+            }
+            DiffWarning::HashCollision { .. } => writeln!(
+                out,
+                "warning: two different values share an 8-character masked hash"
+            ),
+        };
     }
 }
 

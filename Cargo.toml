@@ -1,9 +1,9 @@
 [package]
 name = "diff-kdbx"
 description = "Semantic diff for KeePass KDBX files"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.89"
 authors = ["Alexander Towell <lex@metafunctor.com>"]
 license = "MIT"
 repository = "https://github.com/queelius/diff-kdbx"
