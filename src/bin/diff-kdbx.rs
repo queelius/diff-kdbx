@@ -43,11 +43,19 @@ struct Cli {
     b: Option<PathBuf>,
 
     /// Run as git textconv driver: emit a stable text dump of one file.
-    #[arg(long, value_name = "FILE", conflicts_with = "dump_path")]
+    #[arg(
+        long,
+        value_name = "FILE",
+        conflicts_with_all = ["dump_path", "a", "b", "separate_keys", "key_file_a", "key_file_b", "format"]
+    )]
     textconv: Option<PathBuf>,
 
     /// Emit a text dump of one file (manual inspection).
-    #[arg(long = "dump", value_name = "FILE", conflicts_with = "textconv")]
+    #[arg(
+        long = "dump",
+        value_name = "FILE",
+        conflicts_with_all = ["textconv", "a", "b", "separate_keys", "key_file_a", "key_file_b", "format"]
+    )]
     dump_path: Option<PathBuf>,
 
     #[command(flatten)]

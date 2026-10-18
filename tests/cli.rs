@@ -481,3 +481,41 @@ fn fingerprint_subcommand_rejects_bad_params() {
         .assert()
         .code(2);
 }
+
+/// One-file modes take one file and no two-file options: anything else is
+/// an error (exit 2), never silently ignored.
+#[test]
+fn one_file_modes_reject_extra_arguments_and_unused_options() {
+    let tmp = TempDir::new().unwrap();
+    let vault = bank_vault(tmp.path(), "v.kdbx", DatabaseKey::new().with_password("pw"));
+    let v = vault.to_str().unwrap();
+    for mode in ["--textconv", "--dump"] {
+        for extra in [
+            vec![v],
+            vec![v, v],
+            vec!["--separate-keys"],
+            vec!["--separate-keys", "--key-file-a", v],
+            vec!["--separate-keys", "--key-file-b", v],
+            vec!["--format", "text"],
+            vec!["--format=json"],
+        ] {
+            cmd()
+                .env("KDBX_DIFF_PASSWORD", "pw")
+                .args([mode, v])
+                .args(&extra)
+                .assert()
+                .code(2)
+                .stdout(predicate::str::is_empty())
+                .stderr(predicate::str::contains("cannot be used with"));
+        }
+    }
+    // The options that do apply still work.
+    for opts in [["--strict"], ["--include-recycle-bin"]] {
+        cmd()
+            .env("KDBX_DIFF_PASSWORD", "pw")
+            .args(["--dump", v])
+            .args(opts)
+            .assert()
+            .success();
+    }
+}
