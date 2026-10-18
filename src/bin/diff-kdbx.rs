@@ -133,7 +133,8 @@ struct Secret {
 impl Secret {
     /// Resolve the key for one vault. Order: `--no-password` (key file
     /// only), then the environment variable, then a TTY prompt (only when
-    /// `interactive`), then a key file alone.
+    /// `interactive`), then a key file alone. An empty password from the
+    /// variable or the prompt together with a key file means no password.
     fn resolve(
         key_file: Option<&Path>,
         no_password: bool,
@@ -154,7 +155,13 @@ impl Secret {
             }
             None
         } else if let Ok(p) = std::env::var(env_var) {
-            Some(Zeroizing::new(p))
+            // With a key file, an empty password means the vault has none
+            // (the same rule as an empty interactive answer).
+            if p.is_empty() && keyfile.is_some() {
+                None
+            } else {
+                Some(Zeroizing::new(p))
+            }
         } else if interactive && std::io::stdin().is_terminal() {
             let p = Zeroizing::new(
                 rpassword::prompt_password(format!("Password for {label}: "))
@@ -225,14 +232,26 @@ fn sealing(show_secrets: bool, key: &FingerprintKey) -> Sealing<'_> {
 }
 
 fn main() -> std::process::ExitCode {
+    // A panic is a bug, but it must still exit 2 (an error, as for diff),
+    // never 101, and say so in one line instead of a backtrace dump.
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!("Error: internal error (please report it): {info}");
+    }));
     // Returning ExitCode (rather than calling std::process::exit) lets the
     // runtime flush stdout before termination.
-    match run() {
-        Ok(code) => std::process::ExitCode::from(code),
-        Err(e) => {
+    std::process::ExitCode::from(guarded(run))
+}
+
+/// The exit code of `body`: its own on success, 2 on an error (printed to
+/// stderr) or a panic (reported by the panic hook).
+fn guarded(body: impl FnOnce() -> Result<u8> + std::panic::UnwindSafe) -> u8 {
+    match std::panic::catch_unwind(body) {
+        Ok(Ok(code)) => code,
+        Ok(Err(e)) => {
             eprintln!("Error: {e:#}");
-            std::process::ExitCode::from(2)
+            2
         }
+        Err(_) => 2,
     }
 }
 
@@ -327,6 +346,12 @@ fn run_dump(cli: &Cli, path: &Path, interactive: bool) -> Result<u8> {
 /// so the key is never cheaper to attack than either vault and no costlier
 /// than the stronger one.
 fn run_diff(cli: &Cli, a_path: &Path, b_path: &Path) -> Result<u8> {
+    if cli.separate_keys && cli.key.key_file.is_some() {
+        bail!(
+            "--key-file names one key file for both files; with --separate-keys use \
+             --key-file-a and --key-file-b"
+        );
+    }
     let (secret_a, secret_b) = if cli.separate_keys {
         let a = Secret::resolve(
             cli.key_file_a.as_deref(),
@@ -414,4 +439,16 @@ fn run_fingerprint(field: &str, entry: &str, key: &KeyArgs, vault: &Path) -> Res
     let fp = fp_key.fingerprint(Domain::Field, plaintext.as_bytes());
     write_stdout(format!("{}\n", fp.to_hex()).as_bytes())?;
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exit_codes_of_success_error_and_panic() {
+        assert_eq!(guarded(|| Ok(1)), 1);
+        assert_eq!(guarded(|| bail!("boom")), 2);
+        assert_eq!(guarded(|| panic!("a bug")), 2);
+    }
 }

@@ -123,8 +123,11 @@ diff-kdbx fingerprint --field <NAME> --entry <PATH-OR-UUID> [--key-file F] [--no
 
 **Key resolution** (first match wins): `--no-password` (requires
 `--key-file`), then `KDBX_DIFF_PASSWORD`, then a TTY prompt (never in
-`--textconv`; an empty answer with `--key-file` means no password), then the
-key file alone.
+`--textconv`), then the key file alone. An empty password, from the variable
+or the prompt, together with a key file means the vault has no password.
+With `--separate-keys`, each side resolves on its own (`--key-file-a`,
+`KDBX_DIFF_PASSWORD_A`, and so on); `--key-file` is refused there because it
+would be ambiguous.
 
 ## Output
 

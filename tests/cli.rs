@@ -305,3 +305,56 @@ fn two_file_key_uses_the_stronger_vaults_parameters() {
         );
     }
 }
+
+/// --key-file names one key for both files; with --separate-keys that is
+/// ambiguous, so it is refused instead of silently ignored.
+#[test]
+fn separate_keys_reject_a_shared_key_file() {
+    let tmp = TempDir::new().unwrap();
+    let kf = keyfile(tmp.path());
+    let a = bank_vault(tmp.path(), "a.kdbx", keyfile_key(&kf));
+    cmd()
+        .arg("--separate-keys")
+        .arg("--key-file")
+        .arg(&kf)
+        .args([&a, &a])
+        .assert()
+        .code(2)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains("--key-file-a"));
+    // Per-side key files work.
+    cmd()
+        .arg("--separate-keys")
+        .arg("--key-file-a")
+        .arg(&kf)
+        .arg("--key-file-b")
+        .arg(&kf)
+        .args([&a, &a])
+        .assert()
+        .code(0);
+}
+
+/// An empty password variable with a key file means "no password", as an
+/// empty interactive answer does.
+#[test]
+fn empty_password_variable_with_a_key_file_means_no_password() {
+    let tmp = TempDir::new().unwrap();
+    let kf = keyfile(tmp.path());
+    let vault = bank_vault(tmp.path(), "v.kdbx", keyfile_key(&kf));
+    cmd()
+        .env("KDBX_DIFF_PASSWORD", "")
+        .arg("--key-file")
+        .arg(&kf)
+        .arg("--textconv")
+        .arg(&vault)
+        .assert()
+        .success();
+    // Without a key file, an empty variable is an empty password.
+    let empty = bank_vault(tmp.path(), "e.kdbx", DatabaseKey::new().with_password(""));
+    cmd()
+        .env("KDBX_DIFF_PASSWORD", "")
+        .arg("--textconv")
+        .arg(&empty)
+        .assert()
+        .success();
+}
