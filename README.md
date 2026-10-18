@@ -19,15 +19,12 @@ output (textconv contract). Exit codes mirror `/usr/bin/diff` (0 no changes,
 
 ## Status
 
-v0.1. Library and CLI working. 72 active tests across five layers (unit,
-integration, determinism, real-git driver, push/clone roundtrip). WASM build
-verified. Not yet on crates.io. The `keepass = "0.12"` API has known gaps
-that diff-kdbx works around; the attachment-enumeration gap
-([keepass-rs#314](https://github.com/sseemayer/keepass-rs/issues/314)) has
-since been fixed upstream by
-[PR #321](https://github.com/sseemayer/keepass-rs/pull/321)
-(`EntryRef::attachments_named`), and diff-kdbx still carries its JSON
-workaround pending migration to the new API.
+v0.2. Library and CLI working on `keepass` 0.15, which reads both KDBX 4.0
+and KDBX 4.1. 97 tests across five layers (unit, integration, determinism,
+real-git driver, push/clone roundtrip), with a fixture for every kind of change
+(add, remove, move, group rename, password, custom field, tag, attachment,
+history, open-and-save noise, cross-version). WASM build verified. See
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Why
 
@@ -119,8 +116,10 @@ diff-kdbx --textconv tests/fixtures/add_entry/after.kdbx
 # Reveal plaintext for protected fields (TTY only by default; warns if piped)
 diff-kdbx --show-secrets --textconv tests/fixtures/add_entry/after.kdbx
 
-# Disable noise suppression (--strict): every difference, including LastAccessTime
-diff-kdbx --strict tests/fixtures/password_change/before.kdbx tests/fixtures/password_change/after.kdbx
+# An open-and-save with no edits: default mode suppresses the timestamp noise...
+diff-kdbx tests/fixtures/noisy_resave/before.kdbx tests/fixtures/noisy_resave/after.kdbx
+# ...and --strict turns suppression off, showing LastAccessTime and UsageCount
+diff-kdbx --strict tests/fixtures/noisy_resave/before.kdbx tests/fixtures/noisy_resave/after.kdbx
 ```
 
 If all of that worked, the binary is healthy. Now wire it into git.

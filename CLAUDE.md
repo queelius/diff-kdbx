@@ -44,8 +44,8 @@ Read the spec before making design-level changes. Read the plan before adding ne
 ## Build and test
 
 ```bash
-cargo test --lib                    # Layer 1: 53 unit tests (no I/O)
-cargo test --features cli           # Layers 1-5: 72 active tests, 2 ignored
+cargo test --lib                    # Layer 1: 65 unit tests (no I/O)
+cargo test --features cli           # Layers 1-5: 97 tests, none ignored
 cargo build --features cli          # CLI binary
 cargo run --features cli --bin gen-fixtures   # regenerate synthetic fixtures (master pw "test-password-do-not-use")
 cargo fmt --check                                          # CI gate
@@ -57,8 +57,8 @@ The five test layers (see `docs/testing.md` for the full pyramid):
 
 | Layer | Suite | Count |
 |---|---|---|
-| 1 | `cargo test --lib` (in-tree unit tests) | 53 |
-| 2 | `tests/integration.rs` (CLI end-to-end) | 8 + 2 ignored |
+| 1 | `cargo test --lib` (in-tree unit tests) | 65 |
+| 2 | `tests/integration.rs` (CLI end-to-end, one test per fixture pair) | 21 |
 | 3 | `tests/determinism.rs` (cross-process byte-stability) | 3 |
 | 4 | `tests/git_driver.rs` (real git in tempdirs) | 5 |
 | 5 | `tests/remote_roundtrip.rs` (bare-repo-as-remote) | 3 |
@@ -81,15 +81,16 @@ cargo build --target wasm32-unknown-unknown --no-default-features
 
 ## keepass-rs version and known API quirks
 
-This crate depends on `keepass = "0.12"` with features `["serialization", "save_kdbx4"]`. The 0.12 API has several non-obvious shapes that bit us during implementation:
+This crate depends on `keepass = "0.15.3"` with feature `save_kdbx4` (needed only by the `gen-fixtures` binary). Non-obvious shapes of the API:
 
 - `Database::root()` returns `GroupRef<'_>`; the crate uses flat hashmaps internally, not a recursive node tree.
-- `entry.id().uuid()` to get a `Uuid`; UUIDs are wrapped in IDs.
+- `entry.id().uuid()` to get a `Uuid`; UUIDs are wrapped in IDs. `EntryId::from_uuid` / `GroupId::from_uuid`, `GroupMut::add_entry_with_id` / `add_group_with_id`, and `Database::new_with_root_id` are public, so fixtures use fixed UUIDs.
 - `entry.fields: pub HashMap<String, Value<String>>`; `Value::is_protected()` is the protected check.
+- `entry.times` holds the seven KDBX `<Times>` values; `compute.rs::diff_times` reports them as `FieldChange::TimeChanged` keyed by the `TimeField` enum, and `TimeField::is_noise` decides default-mode suppression (never a list of field-name strings).
 - `entry.history` accessed via `History::get_entries()`, not direct field.
-- **`Entry.attachments` is `pub(crate)`**: enumerating `(name, content)` requires the `serialization` feature and a JSON round-trip. See `compute.rs::collect_attachments`. Filed upstream as [keepass-rs#314](https://github.com/sseemayer/keepass-rs/issues/314), resolved by [PR #321](https://github.com/sseemayer/keepass-rs/pull/321) (`EntryRef::attachments_named`); migrate `collect_attachments` to the new API when bumping keepass.
-- Entry/Group UUIDs are set internally with no public setter, so test fixtures inherently have varying UUIDs across regenerations.
-- `keepass` 0.12 stores group children in a `HashSet`, so iteration order is per-process randomized and differs even between clones of the same `Database`. diff-kdbx is immune only because it sorts everywhere: `dump.rs` sorts nodes by path, and `compute.rs::sort_changes` orders changes by (kind, path, UUID). Any new tree-walking or rendering code must impose its own ordering or it will break the textconv determinism contract (the Layer 3 tests catch this). Upstream contribution opportunity: ordered children / document order.
+- Attachments: `EntryRef::attachments_named()` yields `(name, AttachmentRef)` (upstream PR #321, ours); `compute.rs::collect_attachments` uses it. `field_diff_entry` therefore takes `EntryRef`s, which carry their database's attachment pool.
+- Since 0.13, group children are an `IndexSet` (document order, upstream PR #363). diff-kdbx still sorts everywhere (`dump.rs` by display path then UUID, `compute.rs::sort_changes` by kind, path, UUID), so output does not depend on file order; keep it that way for the textconv determinism contract (the Layer 3 tests catch regressions).
+- **`Database::save` writes KDBX 4.1 only** (since 0.13, upstream issue #373). Irrelevant to the diff and dump paths, which only read, but it is why every generated fixture is 4.1 and why `tests/fixtures/legacy_kdbx40/` is frozen rather than regenerated.
 
 ## Conventions
 
@@ -103,7 +104,8 @@ This crate depends on `keepass = "0.12"` with features `["serialization", "save_
 
 ## Out of scope (deferred)
 
-- 7 of 10 planned fixtures (`move_entry`, `tag_diff`, `attachment_change`, `history_grew`, `cross_version`, `noisy_resave`, `remove_entry`). 2 integration tests are `#[ignore]` awaiting these.
+- A KDBX 3.1 fixture (keepass cannot write KDBX 3; would need a captured or external file).
+- Dump-mode `--strict` semantics: in diff mode `--strict` shows more (timestamp noise), while in `--textconv`/`--dump` it currently hides the `modified:` line. Decide whether to align them before 1.0.
 - Property tests via proptest (dep is in Cargo.toml; tests not yet written).
 - Performance benchmarks via criterion.
 - `wasm-bindgen-test` browser tests (revisit when `web-kdbx` consumes the library).

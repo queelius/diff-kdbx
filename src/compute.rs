@@ -265,27 +265,25 @@ fn count_structural(s: &mut crate::change_set::Summary, node: &LocatedNode, ev: 
     }
 }
 
-use crate::change_set::{FieldChange, ValueChange, ValueDisplay};
+use crate::change_set::{FieldChange, TimeField, ValueChange, ValueDisplay};
 
 /// Compute field-level changes between two matched entries.
 /// Returns an empty Vec if there are no differences in user-visible fields.
 ///
-/// `db_a` and `db_b` are the databases owning `a` and `b` respectively.
-/// They are required to resolve attachment content (keepass 0.12 stores attachment
-/// binary data centrally; names are only accessible via serialization).
+/// Takes `EntryRef`s rather than `Entry`s because an entry's attachment content lives in
+/// its database's central attachment pool; an `EntryRef` carries that database with it.
 pub fn field_diff_entry(
-    a: &keepass::db::Entry,
-    b: &keepass::db::Entry,
-    db_a: &keepass::Database,
-    db_b: &keepass::Database,
+    a: &keepass::db::EntryRef<'_>,
+    b: &keepass::db::EntryRef<'_>,
     opts: &DiffOptions,
 ) -> Vec<FieldChange> {
     let mut out = Vec::new();
     diff_standard_fields(a, b, opts, &mut out);
     diff_custom_fields(a, b, opts, &mut out);
     diff_tags(a, b, &mut out);
-    diff_attachments(a, b, db_a, db_b, &mut out);
+    diff_attachments(a, b, &mut out);
     diff_history(a, b, &mut out);
+    diff_times(&a.times, &b.times, &mut out);
     out
 }
 
@@ -389,23 +387,17 @@ use crate::mask::HashPrefix;
 /// Diff the attachments of two entries, appending `AttachmentAdded`, `AttachmentRemoved`, and
 /// `AttachmentModified` changes to `out`.
 ///
-/// keepass 0.12 stores attachment binary content in `Database::attachments` (a flat map keyed by
-/// `AttachmentId`). The name→id mapping lives in `Entry::attachments`, which is `pub(crate)` and
-/// therefore inaccessible from outside the keepass crate.  We recover the names by serializing
-/// the entry to JSON (enabled via the `serialization` keepass feature) and reading the
-/// `"attachments"` object's keys.  Content is then resolved by joining against
-/// `db.iter_all_attachments()` on the numeric id.
+/// Attachments are compared by name; content identity is the SHA-256 prefix of the bytes, so a
+/// rename shows as remove plus add and a content swap under the same name as a modification.
 fn diff_attachments(
-    a: &keepass::db::Entry,
-    b: &keepass::db::Entry,
-    db_a: &keepass::Database,
-    db_b: &keepass::Database,
+    a: &keepass::db::EntryRef<'_>,
+    b: &keepass::db::EntryRef<'_>,
     out: &mut Vec<FieldChange>,
 ) {
     use std::collections::BTreeMap;
 
-    let a_atts: BTreeMap<String, HashPrefix> = collect_attachments(a, db_a);
-    let b_atts: BTreeMap<String, HashPrefix> = collect_attachments(b, db_b);
+    let a_atts: BTreeMap<String, HashPrefix> = collect_attachments(a);
+    let b_atts: BTreeMap<String, HashPrefix> = collect_attachments(b);
 
     let all_keys: std::collections::BTreeSet<&String> =
         a_atts.keys().chain(b_atts.keys()).collect();
@@ -433,58 +425,16 @@ fn diff_attachments(
 /// Build a sorted map from attachment name to `HashPrefix` (SHA-256 prefix of the binary content)
 /// for a single entry.
 ///
-/// The keepass 0.12 API does not expose a public name-keyed iterator over an entry's attachments.
-/// We work around this by:
-/// 1. Serializing the entry to a JSON value (requires the `serialization` keepass feature).  The
-///    `attachments` field is serialized as `{"name": <AttachmentId as usize>, ...}`.
-/// 2. Building a `usize → &[u8]` content map from `db.iter_all_attachments()`, using
-///    `att_ref.id().id()` as the numeric key.
-/// 3. Joining the two maps to produce a `name → HashPrefix` map.
+/// Uses `EntryRef::attachments_named()` (keepass 0.12.5+, upstream PR #321), which yields
+/// `(name, AttachmentRef)` pairs directly. The map is a `BTreeMap`, so iteration is sorted by
+/// name and callers get deterministic output for free.
 pub(crate) fn collect_attachments(
-    entry: &keepass::db::Entry,
-    db: &keepass::Database,
+    entry: &keepass::db::EntryRef<'_>,
 ) -> std::collections::BTreeMap<String, HashPrefix> {
-    use std::collections::HashMap;
-
-    // Step 1 – extract name→numeric_id from the serialized entry.
-    // `serde_json::to_value` panics only on non-serializable types; Entry: Serialize.
-    let entry_json = serde_json::to_value(entry)
-        .expect("keepass Entry should always be serializable with the 'serialization' feature");
-    let name_to_id: HashMap<String, usize> = entry_json
-        .get("attachments")
-        .and_then(|v| v.as_object())
-        .map(|m| {
-            m.iter()
-                .filter_map(|(name, id)| id.as_u64().map(|n| (name.clone(), n as usize)))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    if name_to_id.is_empty() {
-        return std::collections::BTreeMap::new();
-    }
-
-    // Step 2 – build numeric_id→content map from the database's attachment pool.
-    // Clone the content bytes so we don't hold a reference into db across the iterator.
-    let id_to_content: HashMap<usize, Vec<u8>> = db
-        .iter_all_attachments()
-        .map(|att_ref| {
-            // AttachmentRef derefs to Attachment; Attachment.data is Value<Vec<u8>>.
-            // Value::get() exposes the bytes regardless of protection.
-            let numeric_id = att_ref.id().id();
-            let content = att_ref.data.get().clone();
-            (numeric_id, content)
-        })
-        .collect();
-
-    // Step 3 – join and hash.
-    let mut out = std::collections::BTreeMap::new();
-    for (name, id) in name_to_id {
-        if let Some(content) = id_to_content.get(&id) {
-            out.insert(name, HashPrefix::of_bytes(content));
-        }
-    }
-    out
+    entry
+        .attachments_named()
+        .map(|(name, att)| (name.to_owned(), HashPrefix::of_bytes(att.data.get())))
+        .collect()
 }
 
 fn diff_history(a: &keepass::db::Entry, b: &keepass::db::Entry, out: &mut Vec<FieldChange>) {
@@ -503,8 +453,39 @@ fn diff_history(a: &keepass::db::Entry, b: &keepass::db::Entry, out: &mut Vec<Fi
     // concern. v0.1 reports same-length history as unchanged.
 }
 
-/// Field names suppressed by default (not in --strict).
-pub const NOISY_TIMESTAMP_FIELDS: &[&str] = &["LastAccessTime", "UsageCount", "LocationChanged"];
+/// Diff an entry's timestamps and usage counter, appending one `TimeChanged`
+/// per field that differs. Noise (access time, usage count, and so on) is still
+/// emitted here; `suppress_field_changes` removes it unless `--strict`.
+fn diff_times(a: &keepass::db::Times, b: &keepass::db::Times, out: &mut Vec<FieldChange>) {
+    // KeePass writes an ExpiryTime even for entries that never expire, where it
+    // has no effect, so only report it when either side actually expires.
+    let expiry_matters = a.expires == Some(true) || b.expires == Some(true);
+    for field in TimeField::ALL {
+        if field == TimeField::ExpiryTime && !expiry_matters {
+            continue;
+        }
+        let (from, to) = (read_time(field, a), read_time(field, b));
+        if from != to {
+            out.push(FieldChange::TimeChanged { field, from, to });
+        }
+    }
+}
+
+/// Render one tracked field of a `Times` as a display string.
+fn read_time(field: TimeField, t: &keepass::db::Times) -> Option<String> {
+    fn ts(d: Option<chrono::NaiveDateTime>) -> Option<String> {
+        d.map(|d| d.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+    }
+    match field {
+        TimeField::CreationTime => ts(t.creation),
+        TimeField::LastModificationTime => ts(t.last_modification),
+        TimeField::LastAccessTime => ts(t.last_access),
+        TimeField::ExpiryTime => ts(t.expiry),
+        TimeField::Expires => t.expires.map(|b| b.to_string()),
+        TimeField::UsageCount => t.usage_count.map(|n| n.to_string()),
+        TimeField::LocationChanged => ts(t.location_changed),
+    }
+}
 
 fn suppress_field_changes(
     fields: Vec<FieldChange>,
@@ -525,13 +506,10 @@ fn suppress_field_changes(
     (kept, suppressed)
 }
 
+/// Only typed timestamp changes can be noise; any named field (standard or
+/// custom) is content, whatever it is called.
 fn is_suppressible(fc: &FieldChange) -> bool {
-    match fc {
-        FieldChange::Modified { name, .. }
-        | FieldChange::Added { name, .. }
-        | FieldChange::Removed { name, .. } => NOISY_TIMESTAMP_FIELDS.contains(&name.as_str()),
-        _ => false,
-    }
+    matches!(fc, FieldChange::TimeChanged { field, .. } if field.is_noise())
 }
 
 use crate::change_set::{DatabaseChange, DiffWarning};
@@ -590,13 +568,13 @@ pub fn compute(a: &keepass::Database, b: &keepass::Database, opts: &DiffOptions)
         if !matches!((&na.kind, &nb.kind), (NodeKind::Entry, NodeKind::Entry)) {
             continue;
         }
-        let Some(ea) = entries_a.get(uuid).map(|er| &**er) else {
+        let Some(ea) = entries_a.get(uuid) else {
             continue;
         };
-        let Some(eb) = entries_b.get(uuid).map(|er| &**er) else {
+        let Some(eb) = entries_b.get(uuid) else {
             continue;
         };
-        let raw_fields = field_diff_entry(ea, eb, a, b, opts);
+        let raw_fields = field_diff_entry(ea, eb, opts);
         let (fields, suppressed) = suppress_field_changes(raw_fields, opts);
         cs.summary.suppressed += suppressed;
         if !fields.is_empty() {
@@ -757,52 +735,182 @@ mod test {
         let _ = cs;
     }
 
+    fn time_change(field: TimeField) -> FieldChange {
+        FieldChange::TimeChanged {
+            field,
+            from: Some("2026-01-01T00:00:00Z".into()),
+            to: Some("2026-02-01T00:00:00Z".into()),
+        }
+    }
+
+    fn title_change() -> FieldChange {
+        FieldChange::Modified {
+            name: "Title".into(),
+            change: ValueChange {
+                from: ValueDisplay::Plain {
+                    value: "old".into(),
+                },
+                to: ValueDisplay::Plain {
+                    value: "new".into(),
+                },
+            },
+        }
+    }
+
     #[test]
-    fn suppression_drops_last_access_time() {
-        let opts = DiffOptions::default();
+    fn suppression_drops_noise_time_changes_only() {
         let input = vec![
-            FieldChange::Modified {
-                name: "LastAccessTime".into(),
-                change: ValueChange {
-                    from: ValueDisplay::Plain { value: "t1".into() },
-                    to: ValueDisplay::Plain { value: "t2".into() },
-                },
-            },
-            FieldChange::Modified {
-                name: "Title".into(),
-                change: ValueChange {
-                    from: ValueDisplay::Plain {
-                        value: "old".into(),
-                    },
-                    to: ValueDisplay::Plain {
-                        value: "new".into(),
-                    },
-                },
-            },
+            time_change(TimeField::LastAccessTime),
+            time_change(TimeField::CreationTime),
+            title_change(),
         ];
-        let (kept, suppressed) = suppress_field_changes(input, &opts);
-        assert_eq!(kept.len(), 1);
-        assert_eq!(suppressed, 1);
-        assert!(matches!(&kept[0], FieldChange::Modified { name, .. } if name == "Title"));
+        let (kept, suppressed) = suppress_field_changes(input, &DiffOptions::default());
+        assert_eq!(suppressed, 1, "only LastAccessTime is noise");
+        assert_eq!(kept.len(), 2);
+        assert!(kept.contains(&time_change(TimeField::CreationTime)));
+        assert!(kept.contains(&title_change()));
     }
 
     #[test]
     fn strict_disables_suppression() {
         let opts = DiffOptions {
             strict: true,
-            show_secrets: false,
-            include_recycle_bin: false,
+            ..DiffOptions::default()
         };
-        let input = vec![FieldChange::Modified {
-            name: "LastAccessTime".into(),
-            change: ValueChange {
-                from: ValueDisplay::Plain { value: "t1".into() },
-                to: ValueDisplay::Plain { value: "t2".into() },
-            },
-        }];
+        let input = vec![time_change(TimeField::LastAccessTime)];
         let (kept, suppressed) = suppress_field_changes(input, &opts);
         assert_eq!(kept.len(), 1);
         assert_eq!(suppressed, 0);
+    }
+
+    /// A user's custom field whose name collides with a timestamp element is
+    /// ordinary content. The old name-based suppression silently dropped it.
+    #[test]
+    fn custom_field_named_like_a_timestamp_is_not_suppressed() {
+        let input = vec![FieldChange::Modified {
+            name: "UsageCount".into(),
+            change: ValueChange {
+                from: ValueDisplay::Plain { value: "1".into() },
+                to: ValueDisplay::Plain { value: "2".into() },
+            },
+        }];
+        let (kept, suppressed) = suppress_field_changes(input, &DiffOptions::default());
+        assert_eq!(suppressed, 0);
+        assert_eq!(kept.len(), 1);
+    }
+
+    /// Build a one-entry database and a clone of it, returning both and the
+    /// entry id, so a test can perturb the clone's timestamps.
+    fn one_entry_pair() -> (keepass::Database, keepass::Database, keepass::db::EntryId) {
+        let mut a = empty_db();
+        let eid = {
+            let mut root = a.root_mut();
+            let mut e = root.add_entry();
+            let id = e.id();
+            e.edit(|x| x.set_unprotected(keepass::db::fields::TITLE, "Bank"));
+            id
+        };
+        let b = a.clone();
+        (a, b, eid)
+    }
+
+    fn at(s: &str) -> chrono::NaiveDateTime {
+        chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").unwrap()
+    }
+
+    /// Opening and re-saving touches access time and usage count. Default mode
+    /// reports no changes and counts them as suppressed; --strict reports both.
+    #[test]
+    fn noise_only_resave_is_suppressed_by_default_and_shown_in_strict() {
+        let (a, mut b, eid) = one_entry_pair();
+        {
+            let mut e = b.entry_mut(eid).unwrap();
+            e.times.last_access = Some(at("2026-05-01 12:00:00"));
+            e.times.usage_count = Some(e.times.usage_count.unwrap_or(0) + 3);
+        }
+
+        let cs = compute(&a, &b, &DiffOptions::default());
+        assert!(
+            cs.changes.is_empty(),
+            "noise-only change should be empty: {:?}",
+            cs.changes
+        );
+        assert_eq!(cs.summary.suppressed, 2);
+
+        let strict = DiffOptions {
+            strict: true,
+            ..DiffOptions::default()
+        };
+        let cs = compute(&a, &b, &strict);
+        let fields = cs
+            .changes
+            .iter()
+            .find_map(|c| match c {
+                Change::Entry {
+                    kind: EntryChangeKind::Modified { fields },
+                    ..
+                } => Some(fields),
+                _ => None,
+            })
+            .expect("strict mode reports the timestamp changes");
+        let changed: Vec<TimeField> = fields
+            .iter()
+            .filter_map(|f| match f {
+                FieldChange::TimeChanged { field, .. } => Some(*field),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            changed,
+            vec![TimeField::LastAccessTime, TimeField::UsageCount]
+        );
+    }
+
+    /// Setting an expiry is deliberate and is reported even in default mode.
+    #[test]
+    fn expiry_change_is_reported_by_default() {
+        let (a, mut b, eid) = one_entry_pair();
+        {
+            let mut e = b.entry_mut(eid).unwrap();
+            e.times.expires = Some(true);
+            e.times.expiry = Some(at("2030-01-01 00:00:00"));
+        }
+        let cs = compute(&a, &b, &DiffOptions::default());
+        let reported: Vec<TimeField> = cs
+            .changes
+            .iter()
+            .flat_map(|c| match c {
+                Change::Entry {
+                    kind: EntryChangeKind::Modified { fields },
+                    ..
+                } => fields.clone(),
+                _ => vec![],
+            })
+            .filter_map(|f| match f {
+                FieldChange::TimeChanged { field, .. } => Some(field),
+                _ => None,
+            })
+            .collect();
+        assert!(reported.contains(&TimeField::Expires));
+        assert!(reported.contains(&TimeField::ExpiryTime));
+    }
+
+    /// KeePass writes an ExpiryTime even for entries that never expire, where it
+    /// has no effect. A change to it is not reported unless either side expires.
+    #[test]
+    fn expiry_time_ignored_when_entry_does_not_expire() {
+        let (a, mut b, eid) = one_entry_pair();
+        b.entry_mut(eid).unwrap().times.expiry = Some(at("2031-06-01 00:00:00"));
+        let strict = DiffOptions {
+            strict: true,
+            ..DiffOptions::default()
+        };
+        let cs = compute(&a, &b, &strict);
+        assert!(
+            cs.changes.is_empty(),
+            "inert ExpiryTime change: {:?}",
+            cs.changes
+        );
     }
 
     // ── compute() integration tests ──────────────────────────────────────────

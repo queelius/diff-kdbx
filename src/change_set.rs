@@ -66,6 +66,75 @@ pub enum FieldChange {
     HistoryGrew { added: usize },
     /// Per-entry history shrank or non-prefix-extended (suspicious).
     HistoryRewritten { from_len: usize, to_len: usize },
+    /// An entry timestamp or counter changed. Values are rendered strings
+    /// (RFC 3339 UTC for times, decimal for the counter, `true`/`false` for
+    /// the expiry flag); `None` means the value is absent on that side.
+    /// Whether default mode suppresses it is decided by [`TimeField::is_noise`].
+    TimeChanged {
+        field: TimeField,
+        from: Option<String>,
+        to: Option<String>,
+    },
+}
+
+/// An entry timestamp or counter tracked by the diff. Variants mirror the
+/// KDBX `<Times>` XML elements; [`TimeField::kdbx_name`] returns the element
+/// name for display. Noise classification lives on the type (an exhaustive
+/// match), not in a list of field-name strings, so a user's custom field that
+/// happens to be named like a timestamp is never mistaken for one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TimeField {
+    CreationTime,
+    LastModificationTime,
+    LastAccessTime,
+    ExpiryTime,
+    Expires,
+    UsageCount,
+    LocationChanged,
+}
+
+impl TimeField {
+    /// Every tracked field, in the order changes are reported.
+    pub const ALL: [TimeField; 7] = [
+        TimeField::CreationTime,
+        TimeField::LastModificationTime,
+        TimeField::LastAccessTime,
+        TimeField::ExpiryTime,
+        TimeField::Expires,
+        TimeField::UsageCount,
+        TimeField::LocationChanged,
+    ];
+
+    /// The KDBX XML element name for this field.
+    pub fn kdbx_name(self) -> &'static str {
+        match self {
+            TimeField::CreationTime => "CreationTime",
+            TimeField::LastModificationTime => "LastModificationTime",
+            TimeField::LastAccessTime => "LastAccessTime",
+            TimeField::ExpiryTime => "ExpiryTime",
+            TimeField::Expires => "Expires",
+            TimeField::UsageCount => "UsageCount",
+            TimeField::LocationChanged => "LocationChanged",
+        }
+    }
+
+    /// Whether default (non-`--strict`) mode suppresses a change to this field.
+    ///
+    /// Opening and re-saving a vault touches the access time and usage count.
+    /// Any edit moves the last-modification time, and a move updates the
+    /// location-changed time, but the edit or move itself is already reported,
+    /// so the timestamp adds nothing. Creation and expiry changes are
+    /// deliberate and stay visible.
+    pub fn is_noise(self) -> bool {
+        match self {
+            TimeField::LastModificationTime
+            | TimeField::LastAccessTime
+            | TimeField::UsageCount
+            | TimeField::LocationChanged => true,
+            TimeField::CreationTime | TimeField::ExpiryTime | TimeField::Expires => false,
+        }
+    }
 }
 
 /// Database-level metadata change.

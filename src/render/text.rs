@@ -37,8 +37,17 @@ fn render_summary(s: &Summary, out: &mut String) {
 }
 
 fn render_warnings(warnings: &[crate::change_set::DiffWarning], out: &mut String) {
+    use crate::change_set::DiffWarning;
     for w in warnings {
-        let _ = writeln!(out, "warning: {:?}", w);
+        let _ = match w {
+            DiffWarning::VersionMismatch { a, b } => {
+                writeln!(out, "warning: KDBX version differs: {a} -> {b}")
+            }
+            DiffWarning::HashCollision { .. } => writeln!(
+                out,
+                "warning: two different values share an 8-character masked hash"
+            ),
+        };
     }
 }
 
@@ -174,6 +183,16 @@ fn render_field(f: &FieldChange, out: &mut String) {
         }
         FieldChange::HistoryRewritten { from_len, to_len } => {
             let _ = writeln!(out, "  H history rewritten: {} -> {}", from_len, to_len);
+        }
+        FieldChange::TimeChanged { field, from, to } => {
+            let show = |v: &Option<String>| v.as_deref().unwrap_or("(none)").to_owned();
+            let _ = writeln!(
+                out,
+                "  ~ {}: {} -> {}",
+                field.kdbx_name(),
+                show(from),
+                show(to)
+            );
         }
     }
 }

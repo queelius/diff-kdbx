@@ -82,7 +82,7 @@ fn dump_groups(db: &keepass::Database, opts: &DumpOptions, out: &mut String) {
             }
             NodeKind::Entry => {
                 if let Some(er) = entries.get(uuid) {
-                    dump_entry(er, *uuid, &node.path, db, opts, out);
+                    dump_entry(er, *uuid, &node.path, opts, out);
                 }
             }
         }
@@ -99,7 +99,6 @@ fn dump_entry(
     er: &keepass::db::EntryRef<'_>,
     uuid: Uuid,
     path: &Path,
-    db: &keepass::Database,
     opts: &DumpOptions,
     out: &mut String,
 ) {
@@ -159,7 +158,7 @@ fn dump_entry(
     // returns a BTreeMap, so already ordered). Emitting only a count hid edits
     // that swap or rename an attachment while keeping the count constant. The
     // hash is the same 8-char SHA-256 prefix used for masked field values.
-    let attachments = crate::compute::collect_attachments(er, db);
+    let attachments = crate::compute::collect_attachments(er);
     for (name, hash) in &attachments {
         let _ = writeln!(out, "  attachment {}: <hash:{}>", name, hash);
     }
@@ -171,10 +170,10 @@ fn dump_entry(
 
     // Modification timestamp (omitted in --strict mode to reduce noise).
     // Times.last_modification is pub Option<NaiveDateTime> in keepass 0.12.
-    if !opts.strict {
-        if let Some(t) = entry_modification_time(er) {
-            let _ = writeln!(out, "  modified: {}", t);
-        }
+    if !opts.strict
+        && let Some(t) = entry_modification_time(er)
+    {
+        let _ = writeln!(out, "  modified: {}", t);
     }
 }
 
