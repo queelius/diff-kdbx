@@ -27,11 +27,8 @@ anyhow = { version = "1", optional = true }
 rpassword = { version = "7", optional = true }
 # The CLI opens files with keepass 0.15 (reads KDBX 3.1, 4.0 and 4.1).
 keepass = { version = "0.15.3", default-features = false, optional = true }
-# Transitional: the keepass-typed engine in src/legacy (removed when the CLI is
-# ported to the snapshot API).
-sha2 = { version = "0.10", optional = true }
-chrono = { version = "0.4", default-features = false, optional = true }
-unicode-normalization = { version = "0.1", optional = true }
+# Wipes the CLI's password and key-file bytes on drop.
+zeroize = { version = "1", optional = true }
 
 [features]
 default = []
@@ -42,9 +39,7 @@ cli = [
     "dep:keepass",
     "kdbx-core/keepass-0_15",
     "kdbx-core/kdf",
-    "dep:sha2",
-    "dep:chrono",
-    "dep:unicode-normalization",
+    "dep:zeroize",
 ]
 
 [dev-dependencies]
@@ -59,6 +54,9 @@ kdbx-core = { path = "../kdbx-core", version = "0.1.0", default-features = false
 anyhow = "1"
 chrono = { version = "0.4", default-features = false }
 keepass = { version = "0.15.3", features = ["save_kdbx4"] }
+# Names keepass's Argon2 version type when tests and the fixture generator
+# choose a vault's KDF (already in the graph through keepass).
+rust_argon2 = { package = "rust-argon2", version = "3", default-features = false }
 
 [[bin]]
 name = "diff-kdbx"

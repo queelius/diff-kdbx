@@ -1,8 +1,25 @@
 //! diff-kdbx: command-line interface.
+//!
+//! Opens files with keepass 0.15, captures them through kdbx-core (sealing
+//! secrets as keyed fingerprints unless `--show-secrets`), and hands the
+//! snapshots to the library. Exit codes mirror `/usr/bin/diff`: 0 no
+//! changes, 1 changes, 2 error.
 
-use clap::Parser;
 use std::io::IsTerminal;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use anyhow::{Context, Result, anyhow, bail};
+use clap::{Args, Parser, Subcommand};
+use diff_kdbx::kdbx_core::capture::keepass_0_15::{capture, header};
+use diff_kdbx::kdbx_core::fingerprint::{DeriveParams, Domain, FingerprintKey, KeyMaterial};
+use diff_kdbx::kdbx_core::model::{Sealing, Snapshot, Value};
+use diff_kdbx::kdbx_core::path::VaultPath;
+use diff_kdbx::{
+    DiffOptions, DumpOptions, FingerprintKeyInfo, JsonOptions, Noise, RecycleBin, compute, dump,
+    render_json, render_text,
+};
+use uuid::Uuid;
+use zeroize::Zeroizing;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -10,9 +27,13 @@ use std::path::PathBuf;
     version,
     about = "Semantic diff for KeePass KDBX files",
     long_about = "Semantic diff for KeePass KDBX files. Primarily a git textconv driver; \
-                  also a standalone CLI. See README for git integration setup."
+                  also a standalone CLI. See README for git integration setup.",
+    args_conflicts_with_subcommands = true
 )]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+
     /// First KDBX file (older snapshot).
     #[arg(value_name = "A")]
     a: Option<PathBuf>,
@@ -29,9 +50,8 @@ struct Cli {
     #[arg(long = "dump", value_name = "FILE", conflicts_with = "textconv")]
     dump_path: Option<PathBuf>,
 
-    /// Key file (used for both A and B unless --separate-keys).
-    #[arg(long, value_name = "PATH")]
-    key_file: Option<PathBuf>,
+    #[command(flatten)]
+    key: KeyArgs,
 
     /// Use separate keys for A and B (with --key-file-a / --key-file-b
     /// or KDBX_DIFF_PASSWORD_A / KDBX_DIFF_PASSWORD_B).
@@ -46,12 +66,12 @@ struct Cli {
     #[arg(long, value_name = "PATH", requires = "separate_keys")]
     key_file_b: Option<PathBuf>,
 
-    /// Output format.
+    /// Output format of a two-file diff.
     #[arg(long, value_enum, default_value_t = Format::Text)]
     format: Format,
 
-    /// Disable noise suppression. Reports every difference, including
-    /// LastAccessTime and other timestamps that change on every read.
+    /// Show noise too: timestamps that move on every save, UI state, and
+    /// settings timestamps. Same meaning in diff and dump mode.
     #[arg(long)]
     strict: bool,
 
@@ -59,14 +79,42 @@ struct Cli {
     #[arg(long)]
     show_secrets: bool,
 
-    /// Use ANSI color in text output. Defaults to off.
-    #[arg(long)]
-    color: bool,
-
     /// Include the recycle bin group and its contents in diff/dump output.
     /// By default, the recycle bin is hidden to reduce noise.
     #[arg(long)]
     include_recycle_bin: bool,
+}
+
+/// How a vault is unlocked.
+#[derive(Debug, Args)]
+struct KeyArgs {
+    /// Key file (used for both A and B unless --separate-keys).
+    #[arg(long, value_name = "PATH")]
+    key_file: Option<PathBuf>,
+
+    /// The vault has no password (key file only). Without this flag, an
+    /// empty interactive password together with --key-file means the same.
+    #[arg(long)]
+    no_password: bool,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Print the keyed fingerprint of one entry field, as the diff and dump
+    /// of this vault show it (in full), to verify a recorded fingerprint.
+    Fingerprint {
+        /// The field name (for example Password, or a custom field).
+        #[arg(long, value_name = "NAME")]
+        field: String,
+        /// The entry: a vault path (/Group/Title) or a UUID.
+        #[arg(long, value_name = "PATH-OR-UUID")]
+        entry: String,
+        #[command(flatten)]
+        key: KeyArgs,
+        /// The vault.
+        #[arg(value_name = "VAULT")]
+        vault: PathBuf,
+    },
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -75,75 +123,109 @@ enum Format {
     Json,
 }
 
-mod key {
-    use anyhow::{Context, Result, anyhow};
-    use std::io::IsTerminal;
-    use std::path::{Path, PathBuf};
+/// The secret inputs that unlock one vault, wiped on drop.
+struct Secret {
+    password: Option<Zeroizing<String>>,
+    keyfile: Option<Zeroizing<Vec<u8>>>,
+}
 
-    #[derive(Debug, Clone)]
-    pub struct ResolvedKey {
-        pub password: Option<String>,
-        pub key_file: Option<PathBuf>,
-    }
-
-    /// Resolve a key for a given role (e.g., "A" or "B" or shared "").
-    /// Order: explicit key file flag, then env var, then TTY prompt
-    /// (only if `interactive_allowed`).
-    pub fn resolve(
-        key_file_explicit: Option<&Path>,
+impl Secret {
+    /// Resolve the key for one vault. Order: `--no-password` (key file
+    /// only), then the environment variable, then a TTY prompt (only when
+    /// `interactive`), then a key file alone.
+    fn resolve(
+        key_file: Option<&Path>,
+        no_password: bool,
         env_var: &str,
-        prompt_label: &str,
-        interactive_allowed: bool,
-    ) -> Result<ResolvedKey> {
-        let key_file = key_file_explicit.map(|p| p.to_path_buf());
-        if let Ok(p) = std::env::var(env_var) {
-            return Ok(ResolvedKey {
-                password: Some(p),
-                key_file,
-            });
-        }
-        if interactive_allowed && std::io::stdin().is_terminal() {
-            let p = rpassword::prompt_password(format!("Password for {}: ", prompt_label))
-                .context("reading password from TTY")?;
-            return Ok(ResolvedKey {
-                password: Some(p),
-                key_file,
-            });
-        }
-        // No password source. If a key file alone suffices, return that.
-        if key_file.is_some() {
-            return Ok(ResolvedKey {
-                password: None,
-                key_file,
-            });
-        }
-        Err(anyhow!(
-            "no key source for {}: set {}, pass --key-file, or run interactively",
-            prompt_label,
-            env_var
-        ))
+        label: &str,
+        interactive: bool,
+    ) -> Result<Secret> {
+        let keyfile = key_file
+            .map(|p| {
+                std::fs::read(p)
+                    .map(Zeroizing::new)
+                    .with_context(|| format!("reading key file {}", p.display()))
+            })
+            .transpose()?;
+        let password = if no_password {
+            if keyfile.is_none() {
+                bail!("--no-password needs --key-file");
+            }
+            None
+        } else if let Ok(p) = std::env::var(env_var) {
+            Some(Zeroizing::new(p))
+        } else if interactive && std::io::stdin().is_terminal() {
+            let p = Zeroizing::new(
+                rpassword::prompt_password(format!("Password for {label}: "))
+                    .context("reading password from TTY")?,
+            );
+            // With a key file, an empty password means the vault has none.
+            if p.is_empty() && keyfile.is_some() {
+                None
+            } else {
+                Some(p)
+            }
+        } else if keyfile.is_some() {
+            None
+        } else {
+            bail!(
+                "no key source for {label}: set {env_var}, pass --key-file, or run interactively"
+            );
+        };
+        Ok(Secret { password, keyfile })
     }
 
-    /// Build a keepass DatabaseKey from the resolved parts.
-    pub fn build_db_key(rk: &ResolvedKey) -> Result<keepass::DatabaseKey> {
-        let mut k = keepass::DatabaseKey::new();
-        if let Some(p) = &rk.password {
-            k = k.with_password(p);
+    fn database_key(&self) -> Result<keepass::DatabaseKey> {
+        let mut key = keepass::DatabaseKey::new();
+        if let Some(p) = &self.password {
+            key = key.with_password(p);
         }
-        if let Some(path) = &rk.key_file {
-            let data = std::fs::read(path)
-                .with_context(|| format!("reading key file {}", path.display()))?;
-            k = k.with_keyfile(&mut std::io::Cursor::new(data))?;
+        if let Some(bytes) = &self.keyfile {
+            key = key
+                .with_keyfile(&mut bytes.as_slice())
+                .context("reading key file")?;
         }
-        Ok(k)
+        Ok(key)
+    }
+
+    fn material(&self) -> KeyMaterial<'_> {
+        KeyMaterial::new(
+            self.password.as_ref().map(|p| p.as_bytes()),
+            self.keyfile.as_ref().map(|k| k.as_slice()),
+        )
+    }
+}
+
+fn open(path: &Path, secret: &Secret) -> Result<keepass::Database> {
+    let mut file =
+        std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    keepass::Database::open(&mut file, secret.database_key()?)
+        .with_context(|| format!("unlocking {}", path.display()))
+}
+
+/// A stable fingerprint key: Argon2id over the key material, salted with a
+/// vault's root group UUID, never cheaper than `params`.
+fn derive_key(secret: &Secret, salt: Uuid, params: &DeriveParams) -> Result<FingerprintKey> {
+    FingerprintKey::derive(&secret.material(), salt, params)
+        .map_err(|e| anyhow!("deriving the fingerprint key: {e}"))
+}
+
+/// The derivation parameters for one vault: its own KDF, floored.
+fn params_of(db: &keepass::Database) -> DeriveParams {
+    DeriveParams::for_header(Some(&header(db)))
+}
+
+fn sealing(show_secrets: bool, key: &FingerprintKey) -> Sealing<'_> {
+    if show_secrets {
+        Sealing::Reveal(key)
+    } else {
+        Sealing::Fingerprint(key)
     }
 }
 
 fn main() -> std::process::ExitCode {
-    // Exit codes: 0 = no changes, 1 = changes found, 2 = error.
     // Returning ExitCode (rather than calling std::process::exit) lets the
-    // runtime flush stdout before termination; otherwise piped output can
-    // be silently truncated.
+    // runtime flush stdout before termination.
     match run() {
         Ok(code) => std::process::ExitCode::from(code),
         Err(e) => {
@@ -153,23 +235,32 @@ fn main() -> std::process::ExitCode {
     }
 }
 
-fn run() -> anyhow::Result<u8> {
+fn run() -> Result<u8> {
     let cli = Cli::parse();
-    if cli.textconv.is_some() {
-        run_textconv(cli)
-    } else if cli.dump_path.is_some() {
-        run_dump(cli)
-    } else if cli.a.is_some() && cli.b.is_some() {
-        run_standalone(cli)
+    if let Some(Command::Fingerprint {
+        field,
+        entry,
+        key,
+        vault,
+    }) = &cli.command
+    {
+        return run_fingerprint(field, entry, key, vault);
+    }
+    if let Some(path) = &cli.textconv {
+        // Never interactive: git runs the driver without a terminal.
+        run_dump(&cli, path, false)
+    } else if let Some(path) = &cli.dump_path {
+        run_dump(&cli, path, true)
+    } else if let (Some(a), Some(b)) = (&cli.a, &cli.b) {
+        run_diff(&cli, a, b)
     } else {
-        anyhow::bail!("no operation: provide A and B, or --textconv FILE, or --dump FILE")
+        bail!("no operation: provide A and B, or --textconv FILE, or --dump FILE")
     }
 }
 
-/// Write all bytes to stdout and flush. Treats a broken pipe as a
-/// benign signal that the consumer is done reading (mirrors `grep`,
-/// `sort`, and similar unix tools under SIGPIPE).
-fn write_stdout(bytes: &[u8]) -> anyhow::Result<()> {
+/// Write all bytes to stdout and flush. A broken pipe means the consumer is
+/// done reading (as for `grep` and `sort`).
+fn write_stdout(bytes: &[u8]) -> Result<()> {
     use std::io::Write as _;
     let mut stdout = std::io::stdout().lock();
     match stdout.write_all(bytes).and_then(|()| stdout.flush()) {
@@ -179,10 +270,8 @@ fn write_stdout(bytes: &[u8]) -> anyhow::Result<()> {
     }
 }
 
-/// Warn on stderr when --show-secrets would write plaintext to a non-TTY
-/// stdout (a pipe, a file, or git's capture in textconv mode), where the
-/// secrets are likely to be persisted. Applies to every mode that can emit
-/// secrets: standalone, textconv, and dump.
+/// Warn when --show-secrets would write plaintext to a non-TTY stdout (a
+/// pipe, a file, or git's capture in textconv mode).
 fn warn_show_secrets_non_tty(show_secrets: bool) {
     if show_secrets && !std::io::stdout().is_terminal() {
         eprintln!(
@@ -191,99 +280,132 @@ fn warn_show_secrets_non_tty(show_secrets: bool) {
     }
 }
 
-fn run_textconv(cli: Cli) -> anyhow::Result<u8> {
-    let path = cli.textconv.as_ref().expect("textconv guard");
-    let rk = key::resolve(
-        cli.key_file.as_deref(),
+fn noise(strict: bool) -> Noise {
+    if strict { Noise::Show } else { Noise::Suppress }
+}
+
+fn recycle_bin(include: bool) -> RecycleBin {
+    if include {
+        RecycleBin::Include
+    } else {
+        RecycleBin::Exclude
+    }
+}
+
+/// `--textconv` and `--dump`: one file, its own fingerprint key. The dump is
+/// built in full before anything is written, so stdout is all-or-nothing.
+fn run_dump(cli: &Cli, path: &Path, interactive: bool) -> Result<u8> {
+    let secret = Secret::resolve(
+        cli.key.key_file.as_deref(),
+        cli.key.no_password,
         "KDBX_DIFF_PASSWORD",
         &path.display().to_string(),
-        false, // never interactive in textconv
+        interactive,
     )?;
-    let db_key = key::build_db_key(&rk)?;
-    let mut file = std::fs::File::open(path)?;
-    let db = keepass::Database::open(&mut file, db_key)?;
-    let opts = diff_kdbx::legacy::options::DumpOptions {
-        strict: cli.strict,
-        show_secrets: cli.show_secrets,
-        include_recycle_bin: cli.include_recycle_bin,
-    };
+    let db = open(path, &secret)?;
+    let key = derive_key(&secret, db.root().id().uuid(), &params_of(&db))?;
+    let snap = capture(&db, &sealing(cli.show_secrets, &key));
     warn_show_secrets_non_tty(cli.show_secrets);
-    let s = diff_kdbx::legacy::dump::dump(&db, &opts);
-    // Buffer-then-write so stdout stays all-or-nothing.
-    write_stdout(s.as_bytes())?;
+    let opts = DumpOptions::new(noise(cli.strict), recycle_bin(cli.include_recycle_bin));
+    write_stdout(dump(&snap, &opts).as_bytes())?;
     Ok(0)
 }
 
-fn run_dump(cli: Cli) -> anyhow::Result<u8> {
-    let path = cli.dump_path.as_ref().expect("dump guard");
-    let rk = key::resolve(
-        cli.key_file.as_deref(),
-        "KDBX_DIFF_PASSWORD",
-        &path.display().to_string(),
-        true,
-    )?;
-    let db_key = key::build_db_key(&rk)?;
-    let mut file = std::fs::File::open(path)?;
-    let db = keepass::Database::open(&mut file, db_key)?;
-    let opts = diff_kdbx::legacy::options::DumpOptions {
-        strict: cli.strict,
-        show_secrets: cli.show_secrets,
-        include_recycle_bin: cli.include_recycle_bin,
-    };
-    warn_show_secrets_non_tty(cli.show_secrets);
-    let s = diff_kdbx::legacy::dump::dump(&db, &opts);
-    write_stdout(s.as_bytes())?;
-    Ok(0)
-}
-
-fn run_standalone(cli: Cli) -> anyhow::Result<u8> {
-    let a_path = cli.a.as_ref().expect("standalone guard");
-    let b_path = cli.b.as_ref().expect("standalone guard");
-
-    let (rk_a, rk_b) = if cli.separate_keys {
-        let rk_a = key::resolve(
+/// Two files: one fingerprint key for both, derived from A's key material
+/// and salted with A's root UUID, so unchanged secrets compare equal even
+/// when B's master key differs. Its parameters are the stronger of the two
+/// vaults' own, so the key is never cheaper to attack than either vault.
+fn run_diff(cli: &Cli, a_path: &Path, b_path: &Path) -> Result<u8> {
+    let (secret_a, secret_b) = if cli.separate_keys {
+        let a = Secret::resolve(
             cli.key_file_a.as_deref(),
+            cli.key.no_password,
             "KDBX_DIFF_PASSWORD_A",
             &a_path.display().to_string(),
             true,
         )?;
-        let rk_b = key::resolve(
+        let b = Secret::resolve(
             cli.key_file_b.as_deref(),
+            cli.key.no_password,
             "KDBX_DIFF_PASSWORD_B",
             &b_path.display().to_string(),
             true,
         )?;
-        (rk_a, rk_b)
+        (a, Some(b))
     } else {
-        let rk = key::resolve(
-            cli.key_file.as_deref(),
+        let shared = Secret::resolve(
+            cli.key.key_file.as_deref(),
+            cli.key.no_password,
             "KDBX_DIFF_PASSWORD",
             "both files",
             true,
         )?;
-        (rk.clone(), rk)
+        (shared, None)
     };
+    let db_a = open(a_path, &secret_a)?;
+    let db_b = open(b_path, secret_b.as_ref().unwrap_or(&secret_a)).with_context(|| {
+        if cli.separate_keys {
+            String::from("B did not open with its key")
+        } else {
+            String::from("B did not open with A's key; try --separate-keys")
+        }
+    })?;
 
-    let mut fa = std::fs::File::open(a_path)?;
-    let mut fb = std::fs::File::open(b_path)?;
-    let db_a = keepass::Database::open(&mut fa, key::build_db_key(&rk_a)?)?;
-    let db_b = keepass::Database::open(&mut fb, key::build_db_key(&rk_b)?)?;
+    let (pa, pb) = (params_of(&db_a), params_of(&db_b));
+    let params = DeriveParams::new(
+        pa.memory_kib().max(pb.memory_kib()),
+        pa.iterations().max(pb.iterations()),
+        pa.lanes().max(pb.lanes()),
+    );
+    let salt = db_a.root().id().uuid();
+    let key = derive_key(&secret_a, salt, &params)?;
+    let seal = sealing(cli.show_secrets, &key);
+    let (before, after): (Snapshot, Snapshot) = (capture(&db_a, &seal), capture(&db_b, &seal));
 
     warn_show_secrets_non_tty(cli.show_secrets);
-
-    let opts = diff_kdbx::legacy::options::DiffOptions {
-        strict: cli.strict,
-        show_secrets: cli.show_secrets,
-        include_recycle_bin: cli.include_recycle_bin,
-    };
-    let cs = diff_kdbx::legacy::compute::compute(&db_a, &db_b, &opts);
-
-    let render_opts = diff_kdbx::legacy::options::RenderOptions { color: cli.color };
+    let opts = DiffOptions::new(noise(cli.strict), recycle_bin(cli.include_recycle_bin));
+    let cs = compute(&before, &after, &opts);
     let out = match cli.format {
-        Format::Text => diff_kdbx::legacy::render::text::render(&cs, &render_opts),
-        Format::Json => diff_kdbx::legacy::render::json::render(&cs),
+        Format::Text => render_text(&cs),
+        Format::Json => render_json(
+            &cs,
+            &JsonOptions::with_fingerprint_key(FingerprintKeyInfo::new(params, salt)),
+        ),
     };
     write_stdout(out.as_bytes())?;
-
     Ok(if cs.is_empty() { 0 } else { 1 })
+}
+
+/// `fingerprint`: the full keyed fingerprint of one field, with the vault's
+/// own key (as `--textconv` derives it).
+fn run_fingerprint(field: &str, entry: &str, key: &KeyArgs, vault: &Path) -> Result<u8> {
+    let secret = Secret::resolve(
+        key.key_file.as_deref(),
+        key.no_password,
+        "KDBX_DIFF_PASSWORD",
+        &vault.display().to_string(),
+        true,
+    )?;
+    let db = open(vault, &secret)?;
+    let fp_key = derive_key(&secret, db.root().id().uuid(), &params_of(&db))?;
+    let snap = capture(&db, &Sealing::Reveal(&fp_key));
+    let found = match Uuid::parse_str(entry) {
+        Ok(uuid) => snap
+            .find_entry(uuid)
+            .ok_or_else(|| anyhow!("no entry with UUID {uuid}"))?,
+        Err(_) => VaultPath::parse(entry)
+            .map_err(|e| anyhow!("invalid entry path {entry:?}: {e}"))?
+            .resolve_entry(&snap)
+            .map_err(|e| anyhow!("entry {entry:?}: {e}"))?,
+    };
+    let value = &found
+        .field(field)
+        .ok_or_else(|| anyhow!("entry {entry:?} has no field {field:?}"))?
+        .value;
+    let Value::Plain(plaintext) = value else {
+        bail!("field {field:?} was not captured in plaintext");
+    };
+    let fp = fp_key.fingerprint(Domain::Field, plaintext.as_bytes());
+    write_stdout(format!("{}\n", fp.to_hex()).as_bytes())?;
+    Ok(0)
 }

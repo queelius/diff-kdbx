@@ -480,12 +480,12 @@ dependencies = [
  "predicates",
  "proptest",
  "rpassword",
+ "rust-argon2",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "tempfile",
- "unicode-normalization",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]

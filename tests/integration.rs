@@ -41,14 +41,15 @@ fn add_entry_pair_exits_one_and_reports_added() {
         .stdout(predicate::str::contains("+ ENTRY"));
 }
 
-/// The textconv dump masks protected fields with a hash prefix.
+/// The textconv dump seals protected fields as keyed fingerprints.
 #[test]
-fn password_change_masks_default() {
+fn password_change_seals_by_default() {
     diff_cmd()
         .args(["--textconv", "tests/fixtures/password_change/before.kdbx"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("<hash:"));
+        .stdout(predicate::str::contains("  Password: <sealed:"))
+        .stdout(predicate::str::contains("old-password").not());
 }
 
 /// --show-secrets reveals the plaintext value of protected fields in the dump.
@@ -135,7 +136,7 @@ fn noisy_resave_default_reports_no_changes() {
     let (code, out) = pair("noisy_resave", &[]);
     assert_eq!(code, 0, "{out}");
     assert!(out.contains("(no changes)"), "{out}");
-    assert!(out.contains("6 suppressed"), "{out}");
+    assert!(out.contains("suppressed 6"), "{out}");
 }
 
 /// --strict turns suppression off: the same pair reports the timestamp noise
@@ -149,15 +150,15 @@ fn strict_disables_suppression() {
     assert!(out.contains("~ UsageCount: 0 -> 1"), "{out}");
 }
 
-/// Matched UUIDs make a password edit a masked field-level Modified change,
-/// with neither plaintext shown.
+/// Matched UUIDs make a password edit a sealed property change, with neither
+/// plaintext shown.
 #[test]
 fn password_change_diff_is_masked_modified() {
     let (code, out) = pair("password_change", &[]);
     assert_eq!(code, 1, "{out}");
-    assert!(out.contains("~ ENTRY /Root/Personal/Bank"), "{out}");
+    assert!(out.contains("~ ENTRY /Personal/Bank"), "{out}");
     assert!(
-        predicate::str::is_match(r"~ Password: <hash:[0-9a-f]{8}> -> <hash:[0-9a-f]{8}>")
+        predicate::str::is_match(r"~ Password: <sealed:[0-9a-f]{8}> -> <sealed:[0-9a-f]{8}>\n")
             .unwrap()
             .eval(&out),
         "{out}"
@@ -173,7 +174,7 @@ fn password_change_diff_is_masked_modified() {
 fn password_change_diff_show_secrets_reveals_both_values() {
     let (_, out) = pair("password_change", &["--show-secrets"]);
     assert!(
-        out.contains("~ Password: old-password -> new-password"),
+        out.contains("~ Password: old-password (protected) -> new-password (protected)"),
         "{out}"
     );
 }
@@ -182,51 +183,61 @@ fn password_change_diff_show_secrets_reveals_both_values() {
 fn remove_entry_reports_removed() {
     let (code, out) = pair("remove_entry", &[]);
     assert_eq!(code, 1);
-    assert!(out.contains("- ENTRY /Root/Personal/Email"), "{out}");
+    assert!(out.contains("- ENTRY /Personal/Email"), "{out}");
 }
 
-/// A move reports one Moved change with origin and destination, and no field
-/// noise (location-changed time is suppressed).
+/// A move is one record with its origin, and no property noise (the
+/// location-changed time is suppressed).
 #[test]
 fn move_entry_reports_single_move() {
     let (code, out) = pair("move_entry", &[]);
     assert_eq!(code, 1);
     assert!(
-        out.contains("~ ENTRY /Root/Work/VPN -> /Root/Personal/VPN"),
+        out.contains("~ ENTRY /Personal/VPN (moved from /Work/VPN)\n"),
         "{out}"
     );
-    assert!(out.contains("0 fields"), "{out}");
+    assert!(out.contains("properties 0,"), "{out}");
 }
 
-/// Renaming a group reports one Renamed change and no cascading entry moves.
+/// Renaming a group is a Name change on the group and no cascading entry
+/// moves.
 #[test]
 fn rename_group_reports_rename_without_cascade() {
     let (code, out) = pair("rename_group", &[]);
     assert_eq!(code, 1);
-    assert!(out.contains("(renamed: Work -> Office)"), "{out}");
-    assert!(out.contains("+0/-0/~0 entries"), "{out}");
+    assert!(
+        out.contains("~ GROUP /Office/\n  ~ Name: Work -> Office\n"),
+        "{out}"
+    );
+    assert!(out.contains("entries +0/-0/~0"), "{out}");
 }
 
 #[test]
 fn tag_diff_reports_added_tag() {
     let (_, out) = pair("tag_diff", &[]);
-    assert!(out.contains("+ tag: finance"), "{out}");
+    assert!(out.contains("  + Tag[finance]\n"), "{out}");
 }
 
 #[test]
 fn attachment_change_reports_modified_and_added() {
     let (_, out) = pair("attachment_change", &[]);
-    assert!(out.contains("~ attachment recovery.txt [<hash:"), "{out}");
-    assert!(out.contains("+ attachment statement.pdf <hash:"), "{out}");
+    assert!(
+        out.contains("  ~ Attachment[recovery.txt]: <sealed:"),
+        "{out}"
+    );
+    assert!(
+        out.contains("  + Attachment[statement.pdf]: <sealed:"),
+        "{out}"
+    );
 }
 
-/// A rotated TOTP seed in a protected custom field is reported, masked, in
+/// A rotated TOTP seed in a protected custom field is reported, sealed, in
 /// both the diff and the textconv dump (where it was once invisible).
 #[test]
 fn custom_field_change_is_reported_masked() {
     let (_, out) = pair("custom_field", &[]);
     assert!(
-        predicate::str::is_match(r"~ otp: <hash:[0-9a-f]{8}> -> <hash:[0-9a-f]{8}>")
+        predicate::str::is_match(r"~ otp: <sealed:[0-9a-f]{8}> -> <sealed:[0-9a-f]{8}>")
             .unwrap()
             .eval(&out),
         "{out}"
@@ -241,7 +252,7 @@ fn custom_field_change_is_reported_masked() {
             .output()
             .unwrap();
         let dump = String::from_utf8(dump.stdout).unwrap();
-        assert!(dump.contains("  field otp: <hash:"), "{dump}");
+        assert!(dump.contains("  otp: <sealed:"), "{dump}");
     }
 }
 
@@ -252,7 +263,10 @@ fn history_grew_reports_edit_and_history() {
         out.contains("~ URL: https://bank.example -> https://bank.example/login"),
         "{out}"
     );
-    assert!(out.contains("H 1 history entries added"), "{out}");
+    assert!(
+        out.contains("  + History[2026-01-01T09:00:00Z].URL: https://bank.example\n"),
+        "{out}"
+    );
 }
 
 /// keepass 0.13+ can only write KDBX 4.1, so the generated fixtures are 4.1.
@@ -263,8 +277,8 @@ fn legacy_kdbx40_is_readable() {
         .args(["--textconv", "tests/fixtures/legacy_kdbx40/vault.kdbx"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("version: KDBX4.0"))
-        .stdout(predicate::str::contains("ENTRY //Test Entry"));
+        .stdout(predicate::str::contains("  Version: 4.0\n"))
+        .stdout(predicate::str::contains("ENTRY /Test Entry [uuid:"));
 }
 
 #[test]
@@ -277,6 +291,6 @@ fn cross_version_diff_warns() {
         .assert()
         .code(1)
         .stdout(predicate::str::contains(
-            "warning: KDBX version differs: KDBX4.0 -> KDBX4.1",
+            "warning: KDBX version differs: 4.0 -> 4.1",
         ));
 }

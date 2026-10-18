@@ -40,3 +40,40 @@ pub fn open(relative: &str) -> Snapshot {
     let db = keepass::Database::open(&mut file, key).unwrap();
     capture(&db, &Sealing::Fingerprint(&test_key()))
 }
+
+/// A new database with a cheap Argon2id KDF (1 MiB, 2 passes, 1 lane), so
+/// the fingerprint key derivation runs at the 64 MiB / 3 / 1 floor and the
+/// tests stay fast.
+pub fn cheap_db(root: uuid::Uuid) -> keepass::Database {
+    let mut db = keepass::Database::new_with_root_id(keepass::db::GroupId::from_uuid(root));
+    db.config.kdf_config = keepass::config::KdfConfig::Argon2id {
+        iterations: 2,
+        memory: 1 << 20,
+        parallelism: 1,
+        version: rust_argon2::Version::Version13,
+    };
+    db
+}
+
+/// Save `db` to `path` under `key`.
+pub fn save(db: &keepass::Database, path: &Path, key: keepass::DatabaseKey) {
+    let mut f = std::fs::File::create(path).unwrap();
+    db.save(&mut f, key).unwrap();
+}
+
+/// Every `<Times>` value pinned to 2026-01-01T09:00:00Z, so vaults built at
+/// different moments compare equal.
+pub fn fixed_times() -> keepass::db::Times {
+    let when = chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
+        .and_then(|d| d.and_hms_opt(9, 0, 0))
+        .unwrap();
+    let mut times = keepass::db::Times::default();
+    times.creation = Some(when);
+    times.last_modification = Some(when);
+    times.last_access = Some(when);
+    times.location_changed = Some(when);
+    times.expiry = Some(when);
+    times.expires = Some(false);
+    times.usage_count = Some(0);
+    times
+}

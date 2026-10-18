@@ -1,0 +1,274 @@
+//! CLI behavior beyond the fixture pairs: key resolution, the fingerprint
+//! subcommand, flags. Each test builds its own cheap vault in a tempdir.
+
+mod common;
+
+use std::path::{Path, PathBuf};
+
+use assert_cmd::Command;
+use keepass::DatabaseKey;
+use keepass::db::{EntryId, fields};
+use predicates::prelude::*;
+use tempfile::TempDir;
+use uuid::Uuid;
+
+const ROOT: u128 = 0x0000_0001_c11c_4000_8000_0000_0000_0000;
+const BANK: u128 = 0x0000_0011_c11c_4000_8000_0000_0000_0000;
+
+fn cmd() -> Command {
+    let mut c = Command::cargo_bin("diff-kdbx").unwrap();
+    c.env_remove("KDBX_DIFF_PASSWORD")
+        .env_remove("KDBX_DIFF_PASSWORD_A")
+        .env_remove("KDBX_DIFF_PASSWORD_B");
+    c
+}
+
+/// A one-entry vault: Root / Bank (Password "hunter2", protected).
+fn bank_vault(dir: &Path, name: &str, key: DatabaseKey) -> PathBuf {
+    let mut db = common::cheap_db(Uuid::from_u128(ROOT));
+    db.root_mut().name = "Root".into();
+    {
+        let mut root = db.root_mut();
+        let mut bank = root
+            .add_entry_with_id(EntryId::from_uuid(Uuid::from_u128(BANK)))
+            .unwrap();
+        bank.set_unprotected(fields::TITLE, "Bank");
+        bank.set_protected(fields::PASSWORD, "hunter2");
+        bank.times = common::fixed_times();
+    }
+    db.root_mut().times = common::fixed_times();
+    let path = dir.join(name);
+    common::save(&db, &path, key);
+    path
+}
+
+fn keyfile(dir: &Path) -> PathBuf {
+    let path = dir.join("vault.key");
+    std::fs::write(&path, b"a key file with arbitrary content\n").unwrap();
+    path
+}
+
+fn keyfile_key(path: &Path) -> DatabaseKey {
+    let bytes = std::fs::read(path).unwrap();
+    DatabaseKey::new()
+        .with_keyfile(&mut bytes.as_slice())
+        .unwrap()
+}
+
+fn stdout(c: &mut Command) -> String {
+    let out = c.output().unwrap();
+    assert!(
+        out.status.success(),
+        "exit {:?}: {}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap()
+}
+
+#[test]
+fn key_file_only_vault_opens_without_a_password() {
+    let tmp = TempDir::new().unwrap();
+    let kf = keyfile(tmp.path());
+    let vault = bank_vault(tmp.path(), "v.kdbx", keyfile_key(&kf));
+    // Non-interactive (textconv): a key file alone is the key.
+    let out = stdout(
+        cmd()
+            .arg("--textconv")
+            .arg(&vault)
+            .arg("--key-file")
+            .arg(&kf),
+    );
+    assert!(out.contains("ENTRY /Bank [uuid:"), "{out}");
+    // --no-password makes it explicit, even with a password in the
+    // environment.
+    let out = stdout(
+        cmd()
+            .env("KDBX_DIFF_PASSWORD", "ignored")
+            .args(["--no-password", "--key-file"])
+            .arg(&kf)
+            .arg("--textconv")
+            .arg(&vault),
+    );
+    assert!(out.contains("  Password: <sealed:"), "{out}");
+}
+
+#[test]
+fn no_password_requires_a_key_file() {
+    let tmp = TempDir::new().unwrap();
+    let vault = bank_vault(tmp.path(), "v.kdbx", DatabaseKey::new().with_password("pw"));
+    cmd()
+        .arg("--no-password")
+        .arg("--textconv")
+        .arg(&vault)
+        .assert()
+        .code(2)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains("--no-password needs --key-file"));
+}
+
+#[test]
+fn password_and_key_file_together() {
+    let tmp = TempDir::new().unwrap();
+    let kf = keyfile(tmp.path());
+    let vault = bank_vault(tmp.path(), "v.kdbx", keyfile_key(&kf).with_password("pw"));
+    cmd()
+        .env("KDBX_DIFF_PASSWORD", "pw")
+        .arg("--key-file")
+        .arg(&kf)
+        .arg("--textconv")
+        .arg(&vault)
+        .assert()
+        .success();
+    // The key file alone does not open it.
+    cmd()
+        .arg("--key-file")
+        .arg(&kf)
+        .arg("--textconv")
+        .arg(&vault)
+        .assert()
+        .code(2)
+        .stdout(predicate::str::is_empty());
+}
+
+#[test]
+fn fingerprint_subcommand_matches_the_dump() {
+    let tmp = TempDir::new().unwrap();
+    let vault = bank_vault(tmp.path(), "v.kdbx", DatabaseKey::new().with_password("pw"));
+    let by_path = stdout(
+        cmd()
+            .env("KDBX_DIFF_PASSWORD", "pw")
+            .args(["fingerprint", "--field", "Password", "--entry", "/Bank"])
+            .arg(&vault),
+    );
+    let hex = by_path.trim_end();
+    assert_eq!(hex.len(), 64, "{by_path:?}");
+    assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
+    let by_uuid = stdout(
+        cmd()
+            .env("KDBX_DIFF_PASSWORD", "pw")
+            .args(["fingerprint", "--field", "Password", "--entry"])
+            .arg(Uuid::from_u128(BANK).to_string())
+            .arg(&vault),
+    );
+    assert_eq!(by_path, by_uuid);
+    let dump = stdout(
+        cmd()
+            .env("KDBX_DIFF_PASSWORD", "pw")
+            .arg("--textconv")
+            .arg(&vault),
+    );
+    assert!(
+        dump.contains(&format!("  Password: <sealed:{}>\n", &hex[..8])),
+        "{hex}\n{dump}"
+    );
+    // A plain field has a fingerprint too (it is just never needed).
+    stdout(
+        cmd()
+            .env("KDBX_DIFF_PASSWORD", "pw")
+            .args(["fingerprint", "--field", "Title", "--entry", "/Bank"])
+            .arg(&vault),
+    );
+}
+
+#[test]
+fn fingerprint_subcommand_errors() {
+    let tmp = TempDir::new().unwrap();
+    let vault = bank_vault(tmp.path(), "v.kdbx", DatabaseKey::new().with_password("pw"));
+    for (field, entry, message) in [
+        ("PIN", "/Bank", "has no field"),
+        ("Password", "/Nope", "entry \"/Nope\""),
+        ("Password", "Bank", "invalid entry path"),
+        ("Password", "/Bank/", "addresses a group"),
+    ] {
+        cmd()
+            .env("KDBX_DIFF_PASSWORD", "pw")
+            .args(["fingerprint", "--field", field, "--entry", entry])
+            .arg(&vault)
+            .assert()
+            .code(2)
+            .stdout(predicate::str::is_empty())
+            .stderr(predicate::str::contains(message));
+    }
+}
+
+#[test]
+fn separate_keys_compare_unchanged_secrets_equal() {
+    let tmp = TempDir::new().unwrap();
+    let a = bank_vault(
+        tmp.path(),
+        "a.kdbx",
+        DatabaseKey::new().with_password("pw-a"),
+    );
+    let b = bank_vault(
+        tmp.path(),
+        "b.kdbx",
+        DatabaseKey::new().with_password("pw-b"),
+    );
+    let out = cmd()
+        .env("KDBX_DIFF_PASSWORD_A", "pw-a")
+        .env("KDBX_DIFF_PASSWORD_B", "pw-b")
+        .arg("--separate-keys")
+        .args([&a, &b])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("(no changes)"));
+    // One shared key cannot open both, and the error says what to try.
+    cmd()
+        .env("KDBX_DIFF_PASSWORD", "pw-a")
+        .args([&a, &b])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("--separate-keys"));
+}
+
+#[test]
+fn json_records_how_the_fingerprint_key_was_derived() {
+    let tmp = TempDir::new().unwrap();
+    let a = bank_vault(tmp.path(), "a.kdbx", DatabaseKey::new().with_password("pw"));
+    let out = cmd()
+        .env("KDBX_DIFF_PASSWORD", "pw")
+        .arg("--format=json")
+        .args([&a, &a])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["format_version"], 1);
+    assert_eq!(
+        v["fingerprint_key"],
+        serde_json::json!({
+            "params": {"memory_kib": 65536, "iterations": 3, "lanes": 1},
+            "salt": Uuid::from_u128(ROOT).to_string()
+        })
+    );
+}
+
+#[test]
+fn show_secrets_reveals_and_warns_on_a_pipe() {
+    let tmp = TempDir::new().unwrap();
+    let vault = bank_vault(tmp.path(), "v.kdbx", DatabaseKey::new().with_password("pw"));
+    cmd()
+        .env("KDBX_DIFF_PASSWORD", "pw")
+        .args(["--show-secrets", "--dump"])
+        .arg(&vault)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "  Password: hunter2 (protected)\n",
+        ))
+        .stderr(predicate::str::contains(
+            "--show-secrets with non-TTY stdout",
+        ));
+}
+
+#[test]
+fn color_flag_is_gone() {
+    cmd().args(["--color", "a.kdbx", "b.kdbx"]).assert().code(2);
+}

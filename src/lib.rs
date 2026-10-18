@@ -33,8 +33,3 @@ pub use properties::{
 };
 pub use render::json::{FingerprintKeyInfo, JSON_FORMAT_VERSION, JsonOptions, render_json};
 pub use render::text::render_text;
-
-#[cfg(feature = "cli")]
-#[doc(hidden)]
-#[allow(missing_docs)]
-pub mod legacy;
