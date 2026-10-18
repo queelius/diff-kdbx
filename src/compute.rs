@@ -12,7 +12,8 @@ use crate::change_set::{
 use crate::nodes::{Node, Nodes, path_key};
 use crate::options::{DiffOptions, Noise};
 use crate::properties::{
-    KdfKind, PropertyMap, database_properties, entry_properties, group_properties,
+    KdfKind, PropertyMap, database_properties, entry_own_properties, group_properties,
+    history_item_properties, history_pairs,
 };
 
 /// Compare two snapshots.
@@ -43,12 +44,7 @@ pub fn compute(before: &Snapshot, after: &Snapshot, opts: &DiffOptions) -> Chang
     for (uuid, na) in a.iter() {
         match b.get(uuid).filter(|nb| nb.node.kind() == na.node.kind()) {
             Some(nb) => {
-                let props = diff_maps(
-                    properties(na.node),
-                    properties(nb.node),
-                    opts.noise,
-                    &mut suppressed,
-                );
+                let props = diff_nodes(na.node, nb.node, opts.noise, &mut suppressed);
                 let moved = na.parent != nb.parent;
                 if moved || !props.is_empty() {
                     let moved_from = if moved { na.path.clone() } else { None };
@@ -81,10 +77,36 @@ pub fn compute(before: &Snapshot, after: &Snapshot, opts: &DiffOptions) -> Chang
     ChangeSet::new(changes, warnings(before, after), suppressed)
 }
 
-fn properties(node: NodeRef<'_>) -> PropertyMap {
-    match node {
-        NodeRef::Group(g) => group_properties(g),
-        NodeRef::Entry(e) => entry_properties(e),
+/// The property changes between two versions of a node. An entry's own
+/// properties merge-join directly; its history items are paired by
+/// [`history_pairs`] first (content, then position, within a modification
+/// time) and each pair merge-joins under its key.
+fn diff_nodes(
+    a: NodeRef<'_>,
+    b: NodeRef<'_>,
+    noise: Noise,
+    suppressed: &mut usize,
+) -> Vec<PropertyChange> {
+    match (a, b) {
+        (NodeRef::Entry(a), NodeRef::Entry(b)) => {
+            let mut changes = diff_maps(
+                entry_own_properties(a),
+                entry_own_properties(b),
+                noise,
+                suppressed,
+            );
+            for (key, x, y) in history_pairs(&a.history, &b.history) {
+                let side = |item: Option<&kdbx_core::model::Entry>| {
+                    item.map_or_else(PropertyMap::new, |e| history_item_properties(key, e))
+                };
+                changes.extend(diff_maps(side(x), side(y), noise, suppressed));
+            }
+            changes
+        }
+        (NodeRef::Group(a), NodeRef::Group(b)) => {
+            diff_maps(group_properties(a), group_properties(b), noise, suppressed)
+        }
+        _ => unreachable!("compute pairs nodes of one kind only"),
     }
 }
 

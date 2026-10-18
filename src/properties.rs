@@ -884,8 +884,90 @@ pub(crate) fn group_properties(g: &Group) -> PropertyMap {
     map
 }
 
-/// An entry's properties, including every property of every history item.
+/// An entry's properties, including every property of every history item
+/// (keyed by modification time and document-order index within that time).
 pub(crate) fn entry_properties(e: &Entry) -> PropertyMap {
+    let mut map = entry_own_properties(e);
+    let mut seen: BTreeMap<Option<Timestamp>, usize> = BTreeMap::new();
+    for item in &e.history {
+        let modified = item.times.last_modification;
+        let index = seen.entry(modified).or_default();
+        map.extend(history_item_properties(
+            HistoryKey::new(modified, *index),
+            item,
+        ));
+        *index += 1;
+    }
+    map
+}
+
+/// The properties of one history item, under `key`.
+pub(crate) fn history_item_properties(key: HistoryKey, item: &Entry) -> PropertyMap {
+    entry_properties(item)
+        .into_iter()
+        .map(|(property, value)| {
+            let property = Property::History {
+                item: key,
+                property: Box::new(property),
+            };
+            (property, value)
+        })
+        .collect()
+}
+
+/// The history items of two versions of an entry that differ, paired for
+/// comparison: `(key, before, after)`, in key order.
+///
+/// Items pair only within a group sharing a modification time. History items
+/// are immutable snapshots, so within a group, items equal in content pair
+/// first (the i-th equal item on one side with the i-th on the other) and
+/// report nothing; the remaining items pair by position, and leftovers are
+/// additions or removals. Keys number the reported items of a group
+/// (`index` 0, 1, ...), so they need not equal the items' positions in a
+/// dump. The rule is symmetric: swapping the sides swaps before and after.
+pub(crate) fn history_pairs<'a>(
+    before: &'a [Entry],
+    after: &'a [Entry],
+) -> Vec<(HistoryKey, Option<&'a Entry>, Option<&'a Entry>)> {
+    type Groups<'a> = BTreeMap<Option<Timestamp>, (Vec<&'a Entry>, Vec<&'a Entry>)>;
+    let mut groups: Groups<'a> = BTreeMap::new();
+    for item in before {
+        let group = groups.entry(item.times.last_modification).or_default();
+        group.0.push(item);
+    }
+    for item in after {
+        let group = groups.entry(item.times.last_modification).or_default();
+        group.1.push(item);
+    }
+    let mut out = Vec::new();
+    for (modified, (xs, ys)) in groups {
+        let mut used = vec![false; ys.len()];
+        let mut unpaired_before = Vec::new();
+        for x in xs {
+            match (0..ys.len()).find(|&j| !used[j] && ys[j] == x) {
+                Some(j) => used[j] = true,
+                None => unpaired_before.push(x),
+            }
+        }
+        let unpaired_after: Vec<&Entry> = ys
+            .iter()
+            .zip(&used)
+            .filter(|(_, used)| !**used)
+            .map(|(y, _)| *y)
+            .collect();
+        for index in 0..unpaired_before.len().max(unpaired_after.len()) {
+            out.push((
+                HistoryKey::new(modified, index),
+                unpaired_before.get(index).copied(),
+                unpaired_after.get(index).copied(),
+            ));
+        }
+    }
+    out
+}
+
+/// An entry's own properties, without its history.
+pub(crate) fn entry_own_properties(e: &Entry) -> PropertyMap {
     let mut map = PropertyMap::new();
     for (name, field) in &e.fields {
         map.insert(
@@ -955,25 +1037,6 @@ pub(crate) fn entry_properties(e: &Entry) -> PropertyMap {
         map.insert(Property::PreviousParent, Shown::Uuid(parent));
     }
     custom_data_properties(&e.custom_data, &mut map);
-    let mut seen: BTreeMap<Option<Timestamp>, usize> = BTreeMap::new();
-    for item in &e.history {
-        let modified = item.times.last_modification;
-        let index = seen.entry(modified).or_default();
-        let key = HistoryKey {
-            modified,
-            index: *index,
-        };
-        *index += 1;
-        for (property, value) in entry_properties(item) {
-            map.insert(
-                Property::History {
-                    item: key,
-                    property: Box::new(property),
-                },
-                value,
-            );
-        }
-    }
     map
 }
 

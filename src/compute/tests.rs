@@ -720,3 +720,39 @@ fn version_mismatch_is_warned_and_reported() {
     );
     assert_eq!(database_changes(&cs), ["Version"]);
 }
+
+/// History items sharing a modification time (or all lacking one) are
+/// matched by content first: trimming one and adding one must not read as
+/// every item edited.
+#[test]
+fn history_items_sharing_a_time_match_by_content_first() {
+    for when in [Some(t(0)), None] {
+        let item = |url: &str| {
+            let mut h = titled(0x11, "Bank").with_field("URL", Field::plain(url));
+            h.times.last_modification = when;
+            h
+        };
+        let mut a = base();
+        edit(&mut a, id(0x11)).history = vec![item("u1"), item("u2"), item("u3")];
+        let mut b = a.clone();
+        edit(&mut b, id(0x11)).history = vec![item("u2"), item("u3"), item("u4")];
+        let cs = compute(&a, &b, &DiffOptions::default());
+        let changes = props(&cs, id(0x11));
+        // The trimmed u1 and the added u4 pair up as one changed item; u2 and
+        // u3 match by content and report nothing.
+        assert_eq!(changes.len(), 1, "{changes:#?}");
+        assert_eq!(
+            changes[0].property,
+            Property::History {
+                item: HistoryKey::new(when, 0),
+                property: Box::new(Property::Field(FieldName::new("URL"))),
+            }
+        );
+        assert_eq!(changes[0].before, Some(plain("u1")));
+        assert_eq!(changes[0].after, Some(plain("u4")));
+        // Reordering equal items is no change at all.
+        let mut c = a.clone();
+        edit(&mut c, id(0x11)).history.reverse();
+        assert!(compute(&a, &c, &DiffOptions::default()).is_empty());
+    }
+}
