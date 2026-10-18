@@ -8,9 +8,11 @@ library API).
 The 0.1 and 0.2 lines differ in the `keepass` crate they build against, and
 `keepass` types appear in diff-kdbx's public API (`compute(&Database, ...)`). A
 caller must use the same `keepass` version as the diff-kdbx line it picks:
-0.1.x for `keepass` 0.12, 0.2.x for `keepass` 0.15.
+0.1.x for `keepass` 0.12, 0.2.x for `keepass` 0.15. The 0.1 line is maintained
+on the `release/0.1` branch for callers that still need `keepass` 0.12 (which,
+unlike 0.13+, can save KDBX 4.0).
 
-## [0.2.0] - unreleased
+## [0.2.0] - 2026-10-18
 
 ### Changed
 - Builds against `keepass` 0.15.3 (was 0.12). Reads KDBX 4.1 as well as 4.0.
@@ -48,9 +50,10 @@ caller must use the same `keepass` version as the diff-kdbx line it picks:
 ### Removed
 - `compute::NOISY_TIMESTAMP_FIELDS` (superseded by `TimeField::is_noise`).
 
-## [0.1.0] - unreleased
+## [0.1.0] - 2026-10-18
 
 First release line, on `keepass` 0.12. Library, CLI, and git textconv driver.
+Minimum supported Rust version 1.85.1 (required by `keepass` 0.12).
 
 ### Fixed (since the initial v0.1 work)
 - Field edits were dropped for moved or renamed entries; moves are now
