@@ -29,22 +29,26 @@ changes, 2 error).
 of the `*-kdbx` ecosystem: the library is a pure function of two
 `kdbx_core::model::Snapshot`s and names no keepass type, so a keepass upgrade
 never forces a new diff-kdbx release line. The CLI reads KDBX 3.1, 4.0 and
-4.1 with keepass 0.15. See [CHANGELOG.md](CHANGELOG.md).
-
-Until both crates are published, diff-kdbx depends on kdbx-core by path:
-check the two repositories out side by side (`kdbx/diff-kdbx`,
-`kdbx/kdbx-core`).
+4.1 with keepass 0.15. See [CHANGELOG.md](https://github.com/queelius/diff-kdbx/blob/main/CHANGELOG.md).
 
 ## Install
 
 ```bash
-git clone https://github.com/queelius/kdbx-core.git
-git clone https://github.com/queelius/diff-kdbx.git
-cd diff-kdbx
-cargo install --path . --features cli
+cargo install diff-kdbx --features cli
 ```
 
-Rust 1.89 or later (keepass 0.15 requires it).
+Rust 1.89 or later (keepass 0.15 requires it). The library alone (no
+keepass, no KDF, WASM-ready) is `diff-kdbx = "0.1"` in `Cargo.toml`.
+
+From source, check out [kdbx-core](https://github.com/queelius/kdbx-core)
+next to this repository (the development build depends on it by path,
+`../kdbx-core`):
+
+```bash
+git clone https://github.com/queelius/kdbx-core.git
+git clone https://github.com/queelius/diff-kdbx.git
+cd diff-kdbx && cargo install --path . --features cli
+```
 
 ## Quick start (no real data needed)
 
@@ -77,7 +81,7 @@ git add .gitattributes && git commit -m 'diff kdbx files with diff-kdbx'
 Then `git diff vault.kdbx`, `git log -p vault.kdbx` and `git show HEAD
 vault.kdbx` show the textconv dumps' line diff. The driver never prompts: set
 `KDBX_DIFF_PASSWORD` (and/or put `--key-file` in the textconv command) in the
-shell that runs git. More recipes: `examples/git-config.md`.
+shell that runs git. More recipes: [examples/git-config.md](https://github.com/queelius/diff-kdbx/blob/main/examples/git-config.md).
 
 ### Caching textconv output (opt-in, read this first)
 
@@ -196,7 +200,10 @@ times, and deleted-object tombstones, and counts what it left out.
 **Warnings.** `warning: KDBX version differs: 4.0 -> 4.1`, and `warning: KDF
 weakened: ...` when the key derivation got cheaper to attack (Argon2 memory or
 passes lowered, Argon2 replaced by AES-KDF, AES-KDF rounds lowered, or a
-recognized KDF replaced by an unrecognized one).
+recognized KDF replaced by an unrecognized one). The warning compares each
+parameter on its own, deliberately conservative: lowering the memory warns
+even when more passes keep the total cost equal. Fingerprint key derivation,
+by contrast, compares whole cost (memory x passes).
 
 ## The JSON contract
 
@@ -419,10 +426,10 @@ control of a vault:
 | You want to | Read |
 |---|---|
 | Report a bug | [Issues](https://github.com/queelius/diff-kdbx/issues) |
-| Understand the design | `kdbx-core`'s `docs/superpowers/specs/2026-10-18-kdbx-core-design.md` (section 4) and this repo's `docs/superpowers/specs/2026-04-27-diff-kdbx-design.md` |
-| Add a test or fixture | `docs/testing.md` and `tests/fixtures/MANIFEST.md` |
-| See git config recipes | `examples/git-config.md` |
+| Understand the design | [kdbx-core design spec](https://github.com/queelius/kdbx-core/blob/main/docs/superpowers/specs/2026-10-18-kdbx-core-design.md) (section 4: diff-kdbx), the [diff-kdbx 0.1 plan and decisions](https://github.com/queelius/diff-kdbx/blob/main/docs/superpowers/plans/2026-10-18-diff-kdbx-snapshot-0.1.md), and the [original design](https://github.com/queelius/diff-kdbx/blob/main/docs/superpowers/specs/2026-04-27-diff-kdbx-design.md) |
+| Add a test or fixture | [docs/testing.md](https://github.com/queelius/diff-kdbx/blob/main/docs/testing.md) and [tests/fixtures/MANIFEST.md](https://github.com/queelius/diff-kdbx/blob/main/tests/fixtures/MANIFEST.md) |
+| See git config recipes | [examples/git-config.md](https://github.com/queelius/diff-kdbx/blob/main/examples/git-config.md) |
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/queelius/diff-kdbx/blob/main/LICENSE).

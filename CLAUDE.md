@@ -121,6 +121,6 @@ External dependencies for the full suite: `cargo` and `git`.
 
 - A KDBX 3.1 fixture (keepass cannot write KDBX 3).
 - Helper-command key resolution (`KDBX_DIFF_KEY_HELPER`) for keyrings.
-- A `--params` option for `fingerprint` to verify fingerprints derived with
-  parameters other than the vault's own.
+- Verifying side B of a two-file diff whose two vaults have different key
+  material (`fingerprint` always derives from the opened vault's key).
 - Benchmarks.
