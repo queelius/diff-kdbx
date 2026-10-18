@@ -66,6 +66,7 @@ pub enum Property {
     AutoType(AutoTypeKey),
     /// A window-specific auto-type sequence: the `occurrence`-th association
     /// (0-based, document order) for `window`.
+    #[non_exhaustive]
     AutoTypeAssociation {
         /// Window title pattern.
         window: String,
@@ -91,6 +92,7 @@ pub enum Property {
     /// A `<DeletedObjects>` tombstone, by the deleted record's UUID.
     DeletedObject(Uuid),
     /// A property of one of an entry's history items.
+    #[non_exhaustive]
     History {
         /// Which history item.
         item: HistoryKey,
@@ -294,6 +296,7 @@ pub enum Shown {
     Sealed(Fingerprint),
     /// An entry field: its value and its KDBX protection flag, so a
     /// protection toggle on an unchanged value is a visible change.
+    #[non_exhaustive]
     Field {
         /// The stored protection flag.
         protected: bool,
@@ -315,6 +318,7 @@ pub enum Shown {
     /// An icon.
     Icon(Icon),
     /// An attachment, described without its content.
+    #[non_exhaustive]
     Attachment {
         /// Content length in bytes.
         size: u64,
@@ -324,6 +328,7 @@ pub enum Shown {
         protected: bool,
     },
     /// Binary content (a custom icon), described without the bytes.
+    #[non_exhaustive]
     Blob {
         /// Length in bytes.
         size: u64,
@@ -487,6 +492,46 @@ impl GroupFlag {
             | GroupFlag::EnableSearching
             | GroupFlag::DefaultAutoTypeSequence => false,
         }
+    }
+}
+
+impl Property {
+    /// A window-specific auto-type sequence: the `occurrence`-th (0-based)
+    /// association for `window`.
+    pub fn auto_type_association(window: impl Into<String>, occurrence: usize) -> Self {
+        Property::AutoTypeAssociation {
+            window: window.into(),
+            occurrence,
+        }
+    }
+
+    /// A property of the history item `item`.
+    pub fn history(item: HistoryKey, property: Property) -> Self {
+        Property::History {
+            item,
+            property: Box::new(property),
+        }
+    }
+}
+
+impl Shown {
+    /// An entry field value with its protection flag.
+    pub fn field(protected: bool, value: Value) -> Self {
+        Shown::Field { protected, value }
+    }
+
+    /// An attachment, described without its content.
+    pub fn attachment(size: u64, fingerprint: Fingerprint, protected: bool) -> Self {
+        Shown::Attachment {
+            size,
+            fingerprint,
+            protected,
+        }
+    }
+
+    /// Binary content, described without the bytes.
+    pub fn blob(size: u64, fingerprint: Fingerprint) -> Self {
+        Shown::Blob { size, fingerprint }
     }
 }
 

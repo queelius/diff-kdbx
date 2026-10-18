@@ -11,6 +11,12 @@ use crate::change_set::{
     Change, ChangeSet, DiffWarning, KdfWeakening, NodeChange, NodeStatus, PropertyChange, Summary,
 };
 
+/// Options for [`render_text`]. None yet; the parameter exists so options
+/// can be added without breaking callers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct TextOptions {}
+
 /// Render a change set as text: a summary line, one `warning:` line per
 /// warning, then one block per changed node (`+`, `-` or `~`, the kind, the
 /// path) with one line per property change. Prints `(no changes)` when there
@@ -19,7 +25,7 @@ use crate::change_set::{
 /// Every name and value is rendered through `kdbx_core::text` (inline
 /// escapes, or `| ` continuation lines for multi-line values), so no vault
 /// content can forge a structural line.
-pub fn render_text(cs: &ChangeSet) -> String {
+pub fn render_text(cs: &ChangeSet, _opts: &TextOptions) -> String {
     let mut out = String::new();
     summary(&cs.summary, &mut out);
     for w in &cs.warnings {
@@ -198,7 +204,7 @@ mod tests {
     #[test]
     fn empty_change_set() {
         assert_eq!(
-            render_text(&ChangeSet::new(vec![], vec![], 6)),
+            render_text(&ChangeSet::new(vec![], vec![], 6), &TextOptions::default()),
             "summary: entries +0/-0/~0 (0 moved), groups +0/-0/~0 (0 moved), \
              properties 0, database 0, suppressed 6\n(no changes)\n"
         );
@@ -267,7 +273,7 @@ mod tests {
             0,
         );
         assert_eq!(
-            render_text(&cs),
+            render_text(&cs, &TextOptions::default()),
             "summary: entries +2/-1/~1 (1 moved), groups +0/-0/~1 (0 moved), properties 5, database 1, suppressed 0
 warning: KDBX version differs: 4.0 -> 4.1
 warning: KDF weakened: Argon2d replaced by AES-KDF, which is not memory-hard
@@ -319,7 +325,7 @@ DATABASE
             vec![],
             0,
         );
-        let out = render_text(&cs);
+        let out = render_text(&cs, &TextOptions::default());
         assert!(
             out.contains("  ~ Password: <sealed:12121212> -> <sealed:12121212> (unprotected)\n"),
             "{out}"
@@ -349,7 +355,7 @@ DATABASE
             vec![],
             0,
         );
-        let out = render_text(&cs);
+        let out = render_text(&cs, &TextOptions::default());
         let structural: Vec<&str> = out
             .lines()
             .filter(|l| !l.starts_with(' ') && !l.starts_with("summary:"))

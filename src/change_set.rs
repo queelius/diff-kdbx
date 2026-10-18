@@ -31,6 +31,7 @@ pub struct ChangeSet {
 #[non_exhaustive]
 pub enum Change {
     /// Database-level properties (format, header, `<Meta>`, tombstones).
+    #[non_exhaustive]
     Database {
         /// The property changes, in canonical order.
         changes: Vec<PropertyChange>,
@@ -67,6 +68,7 @@ pub enum NodeStatus {
     Removed,
     /// Present in both, and moved, edited, or both. A move is `moved_from`,
     /// not a second record, so a moved-and-edited node is one record.
+    #[non_exhaustive]
     Modified {
         /// The path before, when the node changed parent group (`None` when
         /// it stayed, or when its old path does not exist).
@@ -129,6 +131,7 @@ pub struct Summary {
 pub enum DiffWarning {
     /// The two files use different KDBX versions, so some properties exist
     /// on one side only (KDBX 4.1 added group tags, for example).
+    #[non_exhaustive]
     VersionMismatch {
         /// The version before.
         before: FormatVersion,
@@ -136,6 +139,7 @@ pub enum DiffWarning {
         after: FormatVersion,
     },
     /// The key derivation function got cheaper to attack.
+    #[non_exhaustive]
     KdfWeakened {
         /// How.
         weakening: KdfWeakening,
@@ -148,6 +152,7 @@ pub enum DiffWarning {
 #[non_exhaustive]
 pub enum KdfWeakening {
     /// A memory-hard KDF (Argon2) was replaced by one that is not (AES-KDF).
+    #[non_exhaustive]
     NoLongerMemoryHard {
         /// The KDF before.
         before: KdfKind,
@@ -156,11 +161,13 @@ pub enum KdfWeakening {
     },
     /// A recognized KDF was replaced by one this version does not
     /// recognize, so its strength cannot be compared.
+    #[non_exhaustive]
     Unrecognized {
         /// The KDF before.
         before: KdfKind,
     },
     /// Argon2 memory cost lowered (bytes).
+    #[non_exhaustive]
     MemoryLowered {
         /// Before.
         before: u64,
@@ -168,6 +175,7 @@ pub enum KdfWeakening {
         after: u64,
     },
     /// Argon2 passes lowered.
+    #[non_exhaustive]
     IterationsLowered {
         /// Before.
         before: u64,
@@ -175,6 +183,7 @@ pub enum KdfWeakening {
         after: u64,
     },
     /// AES-KDF rounds lowered.
+    #[non_exhaustive]
     RoundsLowered {
         /// Before.
         before: u64,
@@ -244,6 +253,62 @@ impl Summary {
             }
         }
         s
+    }
+}
+
+impl Change {
+    /// The database-level record.
+    pub fn database(changes: Vec<PropertyChange>) -> Self {
+        Change::Database { changes }
+    }
+}
+
+impl NodeStatus {
+    /// A modified node: `moved_from` its old path when it changed parent.
+    pub fn modified(moved_from: Option<VaultPath>, changes: Vec<PropertyChange>) -> Self {
+        NodeStatus::Modified {
+            moved_from,
+            changes,
+        }
+    }
+}
+
+impl DiffWarning {
+    /// The two files use different KDBX versions.
+    pub fn version_mismatch(before: FormatVersion, after: FormatVersion) -> Self {
+        DiffWarning::VersionMismatch { before, after }
+    }
+
+    /// The key derivation function got cheaper to attack.
+    pub fn kdf_weakened(weakening: KdfWeakening) -> Self {
+        DiffWarning::KdfWeakened { weakening }
+    }
+}
+
+impl KdfWeakening {
+    /// Argon2 replaced by a KDF that is not memory-hard.
+    pub fn no_longer_memory_hard(before: KdfKind, after: KdfKind) -> Self {
+        KdfWeakening::NoLongerMemoryHard { before, after }
+    }
+
+    /// A recognized KDF replaced by an unrecognized one.
+    pub fn unrecognized(before: KdfKind) -> Self {
+        KdfWeakening::Unrecognized { before }
+    }
+
+    /// Argon2 memory lowered (bytes).
+    pub fn memory_lowered(before: u64, after: u64) -> Self {
+        KdfWeakening::MemoryLowered { before, after }
+    }
+
+    /// Argon2 passes lowered.
+    pub fn iterations_lowered(before: u64, after: u64) -> Self {
+        KdfWeakening::IterationsLowered { before, after }
+    }
+
+    /// AES-KDF rounds lowered.
+    pub fn rounds_lowered(before: u64, after: u64) -> Self {
+        KdfWeakening::RoundsLowered { before, after }
     }
 }
 

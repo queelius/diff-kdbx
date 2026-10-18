@@ -5,7 +5,9 @@
 
 mod common;
 
-use diff_kdbx::{DiffOptions, DumpOptions, JsonOptions, compute, dump, render_json, render_text};
+use diff_kdbx::{
+    DiffOptions, DumpOptions, JsonOptions, TextOptions, compute, dump, render_json, render_text,
+};
 
 #[test]
 fn every_fixture_pair_renders_as_pinned() {
@@ -15,7 +17,10 @@ fn every_fixture_pair_renders_as_pinned() {
         let before = common::open(&format!("{name}/before.kdbx"));
         let after = common::open(&format!("{name}/after.kdbx"));
         let cs = compute(&before, &after, &DiffOptions::default());
-        insta::assert_snapshot!(format!("{name}__text"), render_text(&cs));
+        insta::assert_snapshot!(
+            format!("{name}__text"),
+            render_text(&cs, &TextOptions::default())
+        );
         insta::assert_snapshot!(
             format!("{name}__json"),
             render_json(&cs, &JsonOptions::default())

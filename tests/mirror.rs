@@ -152,7 +152,7 @@ fn database(cs: &ChangeSet) -> Vec<&PropertyChange> {
     cs.changes
         .iter()
         .filter_map(|c| match c {
-            Change::Database { changes } => Some(changes.iter()),
+            Change::Database { changes, .. } => Some(changes.iter()),
             _ => None,
         })
         .flatten()
@@ -172,10 +172,12 @@ fn assert_mirror(ab: &ChangeSet, ba: &ChangeSet) -> Result<(), TestCaseError> {
                 NodeStatus::Modified {
                     moved_from: mx,
                     changes: cx,
+                    ..
                 },
                 NodeStatus::Modified {
                     moved_from: my,
                     changes: cy,
+                    ..
                 },
             ) => {
                 if mx.is_some() {

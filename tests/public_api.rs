@@ -15,7 +15,7 @@ use diff_kdbx::{
     AutoTypeKey, Change, ChangeSet, ColorRole, DiffOptions, DiffWarning, DumpOptions, FieldName,
     FingerprintKeyInfo, GroupFlag, HeaderKey, HistoryKey, JSON_FORMAT_VERSION, JsonOptions,
     KdfKind, KdfWeakening, MetaKey, NodeChange, NodeStatus, Noise, Property, PropertyChange,
-    RecycleBin, Shown, Summary, TimeField, compute, dump, render_json, render_text,
+    RecycleBin, Shown, Summary, TextOptions, TimeField, compute, dump, render_json, render_text,
 };
 use uuid::Uuid;
 
@@ -23,7 +23,8 @@ use uuid::Uuid;
 fn functions_and_constants() {
     let _: fn(&Snapshot, &Snapshot, &DiffOptions) -> ChangeSet = compute;
     let _: fn(&Snapshot, &DumpOptions) -> String = dump;
-    let _: fn(&ChangeSet) -> String = render_text;
+    let _: fn(&ChangeSet, &TextOptions) -> String = render_text;
+    let _ = TextOptions::default();
     let _: fn(&ChangeSet, &JsonOptions) -> String = render_json;
     let _: u32 = JSON_FORMAT_VERSION;
     let _: fn(Vec<Change>, Vec<DiffWarning>, usize) -> ChangeSet = ChangeSet::new;
@@ -85,47 +86,53 @@ fn struct_fields() {
 #[test]
 fn enum_variants() {
     let fp = Fingerprint::from_bytes([1; 32]);
+    // Variants that carry fields are #[non_exhaustive]: built through
+    // constructors, matched with `..`.
     let _ = [
-        Change::Database { changes: vec![] },
+        Change::database(vec![]),
         Change::Group(NodeChange::new(Uuid::nil(), None, NodeStatus::Removed)),
         Change::Entry(NodeChange::new(
             Uuid::nil(),
             None,
-            NodeStatus::Modified {
-                moved_from: None,
-                changes: vec![],
-            },
+            NodeStatus::modified(None, vec![]),
         )),
     ];
     let _ = [
-        DiffWarning::VersionMismatch {
-            before: FormatVersion::KDBX_4_0,
-            after: FormatVersion::KDBX_4_1,
-        },
-        DiffWarning::KdfWeakened {
-            weakening: KdfWeakening::Unrecognized {
-                before: KdfKind::AesKdf,
-            },
-        },
+        DiffWarning::version_mismatch(FormatVersion::KDBX_4_0, FormatVersion::KDBX_4_1),
+        DiffWarning::kdf_weakened(KdfWeakening::unrecognized(KdfKind::AesKdf)),
     ];
-    let _ = [
-        KdfWeakening::NoLongerMemoryHard {
-            before: KdfKind::Argon2d,
-            after: KdfKind::AesKdf,
-        },
-        KdfWeakening::MemoryLowered {
-            before: 2,
-            after: 1,
-        },
-        KdfWeakening::IterationsLowered {
-            before: 2,
-            after: 1,
-        },
-        KdfWeakening::RoundsLowered {
-            before: 2,
-            after: 1,
-        },
+    let weakenings = [
+        KdfWeakening::no_longer_memory_hard(KdfKind::Argon2d, KdfKind::AesKdf),
+        KdfWeakening::memory_lowered(2, 1),
+        KdfWeakening::iterations_lowered(2, 1),
+        KdfWeakening::rounds_lowered(2, 1),
     ];
+    for w in &weakenings {
+        match w {
+            KdfWeakening::NoLongerMemoryHard { before, after, .. } => {
+                let _: (&KdfKind, &KdfKind) = (before, after);
+            }
+            KdfWeakening::MemoryLowered { before, after, .. }
+            | KdfWeakening::IterationsLowered { before, after, .. }
+            | KdfWeakening::RoundsLowered { before, after, .. } => {
+                let _: (&u64, &u64) = (before, after);
+            }
+            KdfWeakening::Unrecognized { before, .. } => {
+                let _: &KdfKind = before;
+            }
+            _ => {}
+        }
+    }
+    match NodeStatus::modified(None, vec![]) {
+        NodeStatus::Modified {
+            moved_from,
+            changes,
+            ..
+        } => {
+            let _: (Option<VaultPath>, Vec<PropertyChange>) = (moved_from, changes);
+        }
+        _ => unreachable!(),
+    }
     let _ = [
         KdfKind::AesKdf,
         KdfKind::Argon2d,
@@ -151,10 +158,7 @@ fn enum_variants() {
         Property::Icon,
         Property::Color(ColorRole::Foreground),
         Property::AutoType(AutoTypeKey::Enabled),
-        Property::AutoTypeAssociation {
-            window: String::new(),
-            occurrence: 0,
-        },
+        Property::auto_type_association(String::new(), 0),
         Property::GroupFlag(GroupFlag::IsExpanded),
         Property::Time(TimeField::CreationTime),
         Property::PreviousParent,
@@ -164,18 +168,12 @@ fn enum_variants() {
         Property::CustomIconName(Uuid::nil()),
         Property::CustomIconModified(Uuid::nil()),
         Property::DeletedObject(Uuid::nil()),
-        Property::History {
-            item: history,
-            property: Box::new(Property::Name),
-        },
+        Property::history(history, Property::Name),
     ];
     let _ = [
         Shown::Text(String::new()),
         Shown::Sealed(fp),
-        Shown::Field {
-            protected: true,
-            value: Value::Sealed(fp),
-        },
+        Shown::field(true, Value::Sealed(fp)),
         Shown::Bool(true),
         Shown::Int(-1),
         Shown::Uint(1),
@@ -183,15 +181,8 @@ fn enum_variants() {
         Shown::Uuid(Uuid::nil()),
         Shown::Color(Rgb { r: 0, g: 0, b: 0 }),
         Shown::Icon(Icon::Standard(0)),
-        Shown::Attachment {
-            size: 0,
-            fingerprint: fp,
-            protected: false,
-        },
-        Shown::Blob {
-            size: 0,
-            fingerprint: fp,
-        },
+        Shown::attachment(0, fp, false),
+        Shown::blob(0, fp),
         Shown::Present,
         Shown::Format(FormatVersion::KDBX_4_1),
         Shown::Kdf(KdfKind::Argon2id),

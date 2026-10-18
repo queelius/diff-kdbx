@@ -15,8 +15,8 @@ use diff_kdbx::kdbx_core::fingerprint::{DeriveParams, Domain, FingerprintKey, Ke
 use diff_kdbx::kdbx_core::model::{Sealing, Snapshot, Value};
 use diff_kdbx::kdbx_core::path::VaultPath;
 use diff_kdbx::{
-    DiffOptions, DumpOptions, FingerprintKeyInfo, JsonOptions, Noise, RecycleBin, compute, dump,
-    render_json, render_text,
+    DiffOptions, DumpOptions, FingerprintKeyInfo, JsonOptions, Noise, RecycleBin, TextOptions,
+    compute, dump, render_json, render_text,
 };
 use uuid::Uuid;
 use zeroize::Zeroizing;
@@ -410,7 +410,7 @@ fn run_diff(cli: &Cli, a_path: &Path, b_path: &Path) -> Result<u8> {
     let opts = DiffOptions::new(noise(cli.strict), recycle_bin(cli.include_recycle_bin));
     let cs = compute(&before, &after, &opts);
     let out = match cli.format {
-        Format::Text => render_text(&cs),
+        Format::Text => render_text(&cs, &TextOptions::default()),
         Format::Json => render_json(
             &cs,
             &JsonOptions::with_fingerprint_key(FingerprintKeyInfo::new(params, salt)),
