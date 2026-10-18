@@ -12,11 +12,11 @@ pub use kdbx_core;
 
 mod change_set;
 mod compute;
+mod dump;
 mod nodes;
 mod options;
-// The text renderers wire in the rest of the property helpers.
-#[allow(dead_code)]
 mod properties;
+mod render;
 #[cfg(test)]
 mod test_support;
 
@@ -25,6 +25,7 @@ pub use change_set::{
 };
 
 pub use compute::compute;
+pub use dump::dump;
 pub use options::{DiffOptions, DumpOptions, Noise, RecycleBin};
 pub use properties::{
     AutoTypeKey, ColorRole, FieldName, GroupFlag, HeaderKey, HistoryKey, KdfKind, MetaKey,

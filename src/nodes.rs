@@ -63,6 +63,19 @@ impl<'a> Nodes<'a> {
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&Uuid, &Node<'a>)> {
         self.by_uuid.iter()
     }
+
+    /// Every node in tree order: by path (a group directly before its
+    /// contents, pathless nodes last), then kind, then UUID.
+    pub(crate) fn in_path_order(&self) -> Vec<&Node<'a>> {
+        let mut nodes: Vec<&Node<'a>> = self.by_uuid.values().collect();
+        nodes.sort_by(|a, b| {
+            path_key(a.path.as_ref())
+                .cmp(&path_key(b.path.as_ref()))
+                .then_with(|| a.node.kind().cmp(&b.node.kind()))
+                .then_with(|| a.node.uuid().cmp(&b.node.uuid()))
+        });
+        nodes
+    }
 }
 
 /// The order of paths: segment by segment (name, then ordinal), so a group
