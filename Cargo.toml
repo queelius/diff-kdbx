@@ -29,8 +29,8 @@ chrono = { version = "0.4", default-features = false, features = ["alloc"] }
 
 # CLI-only dependencies.
 clap = { version = "4", features = ["derive"], optional = true }
-anyhow = { version = "1", optional = true }
-rpassword = { version = "7", optional = true }
+anyhow = { version = "1.0.103", optional = true }
+rpassword = { version = "7.5", optional = true }
 # The CLI opens files with keepass 0.15 (reads KDBX 3.1, 4.0 and 4.1).
 keepass = { version = "0.15.3", default-features = false, optional = true }
 # Wipes the CLI's password and key-file bytes on drop.
@@ -57,7 +57,7 @@ tempfile = "3"
 # Tests capture the committed fixture vaults; examples/gen_fixtures.rs
 # builds and saves them.
 kdbx-core = { version = "0.1.0", default-features = false, features = ["keepass-0_15"] }
-anyhow = "1"
+anyhow = "1.0.103"
 chrono = { version = "0.4", default-features = false }
 keepass = { version = "0.15.3", features = ["save_kdbx4"] }
 # Names keepass's Argon2 version type when tests and the fixture generator
