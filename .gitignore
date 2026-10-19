@@ -1,3 +1,5 @@
 /target
 **/*.rs.bk
 Cargo.lock.bak
+# Local [patch.crates-io] overrides for co-development (see README)
+/.cargo/config.toml

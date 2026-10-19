@@ -19,7 +19,7 @@ exclude = [".github/", "CLAUDE.md", "docs/superpowers/", "*.proptest-regressions
 [dependencies]
 # The vault model and the ecosystem's shared rules. No keepass, no KDF by
 # default: the library is a pure function of two snapshots.
-kdbx-core = { path = "../kdbx-core", version = "0.1.0", default-features = false }
+kdbx-core = { version = "0.1.0", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", default-features = false, features = ["std"] }
@@ -56,7 +56,7 @@ predicates = "3"
 tempfile = "3"
 # Tests capture the committed fixture vaults; examples/gen_fixtures.rs
 # builds and saves them.
-kdbx-core = { path = "../kdbx-core", version = "0.1.0", default-features = false, features = ["keepass-0_15"] }
+kdbx-core = { version = "0.1.0", default-features = false, features = ["keepass-0_15"] }
 anyhow = "1"
 chrono = { version = "0.4", default-features = false }
 keepass = { version = "0.15.3", features = ["save_kdbx4"] }

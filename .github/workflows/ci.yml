@@ -4,20 +4,11 @@ on:
     branches: [main]
   pull_request:
 
-# diff-kdbx depends on kdbx-core by path (../kdbx-core) until both are
-# published, so every job checks out the two repositories side by side.
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          path: diff-kdbx
-      - name: Check out kdbx-core (sibling path dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: queelius/kdbx-core
-          path: kdbx-core
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -27,25 +18,19 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            diff-kdbx/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('diff-kdbx/Cargo.lock') }}
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
       - name: Format check
-        working-directory: diff-kdbx
         run: cargo fmt --check
       - name: Clippy (default features)
-        working-directory: diff-kdbx
         run: cargo clippy --all-targets -- -D warnings
       - name: Clippy (cli feature)
-        working-directory: diff-kdbx
         run: cargo clippy --all-targets --features cli -- -D warnings
       - name: Library tests
-        working-directory: diff-kdbx
         run: cargo test --lib
       - name: All tests
-        working-directory: diff-kdbx
         run: cargo test --features cli
       - name: Docs
-        working-directory: diff-kdbx
         run: cargo doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: -D warnings
@@ -53,33 +38,17 @@ jobs:
   msrv:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          path: diff-kdbx
-      - name: Check out kdbx-core (sibling path dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: queelius/kdbx-core
-          path: kdbx-core
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.89.0
       - name: Build and test on the MSRV
-        working-directory: diff-kdbx
         run: cargo test --features cli
 
   wasm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          path: diff-kdbx
-      - name: Check out kdbx-core (sibling path dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: queelius/kdbx-core
-          path: kdbx-core
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
       - name: Build library for wasm32
-        working-directory: diff-kdbx
         run: cargo build --target wasm32-unknown-unknown --no-default-features

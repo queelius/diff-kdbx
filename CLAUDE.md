@@ -7,8 +7,8 @@ Orientation for working in `diff-kdbx`, a member of the `*-kdbx` ecosystem
 
 A Rust library and CLI for semantic diffs of KeePass `.kdbx` files. Primary
 deployment is as a `git diff` textconv driver; standalone use also works. The
-library is built on `kdbx-core` (`../kdbx-core`, path dependency until both
-are published): it is a pure function of two `kdbx_core::model::Snapshot`s and
+library is built on `kdbx-core` (the crates.io release; see README "Developing
+against a local kdbx-core" for co-development): it is a pure function of two `kdbx_core::model::Snapshot`s and
 names no keepass type. The CLI (feature `cli`) opens files with keepass 0.15
 and captures them through `kdbx-core/keepass-0_15`.
 

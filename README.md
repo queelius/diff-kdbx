@@ -40,15 +40,25 @@ cargo install diff-kdbx --features cli
 Rust 1.89 or later (keepass 0.15 requires it). The library alone (no
 keepass, no KDF, WASM-ready) is `diff-kdbx = "0.1"` in `Cargo.toml`.
 
-From source, check out [kdbx-core](https://github.com/queelius/kdbx-core)
-next to this repository (the development build depends on it by path,
-`../kdbx-core`):
+From source:
 
 ```bash
-git clone https://github.com/queelius/kdbx-core.git
 git clone https://github.com/queelius/diff-kdbx.git
 cd diff-kdbx && cargo install --path . --features cli
 ```
+
+### Developing against a local kdbx-core
+
+The manifest depends on the published [kdbx-core](https://github.com/queelius/kdbx-core).
+To build against an unpublished change, check kdbx-core out next to this
+repository and add an untracked `.cargo/config.toml` (ignored by git):
+
+```toml
+[patch.crates-io]
+kdbx-core = { path = "../kdbx-core" }
+```
+
+CI never sees the patch, so it always builds what crates.io users get.
 
 ## Quick start (no real data needed)
 
