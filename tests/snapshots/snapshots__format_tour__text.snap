@@ -1,0 +1,46 @@
+---
+source: tests/snapshots.rs
+expression: "render_text(&cs, &TextOptions::default())"
+---
+summary: entries +0/-0/~3 (1 moved), groups +0/-0/~0 (0 moved), properties 29, database 0, suppressed 12
+~ ENTRY "/Tour/Card"
+  ~ Password: <sealed:8d7ca101> -> <sealed:8d7ca101> (unprotected)
+  ~ Notes:
+      - | line one
+      - |
+      - | line three
+      + | line one
+      + |
+      + | line 3
+  + Tag["a]b"]
+  - Tag["work"]
+  + Attachment["backup.key"]: <sealed:971cab75> (19 bytes, protected)
+  ~ Icon: standard 0 -> standard 12
+  ~ AutoType.Association["Bank*"#2]: "{USERNAME}" -> "{USERNAME}{ENTER}"
+  ~ CustomData["KPXC_BROWSER"]: <sealed:d4135488> -> <sealed:2e7eb066>
+  - History[unknown].Title: "Card"
+  - History[unknown].UserName: "alice"
+  - History[unknown].Password: <sealed:8d7ca101>
+  - History[unknown].URL: "https://card.example/untimed"
+  - History[unknown].Notes:
+      | line one
+      |
+      | line three
+  - History[unknown]."PIN": <sealed:7bd6a759>
+  - History[unknown]."Tag[x]": "a -> b"
+  - History[unknown].Tag["work"]
+  - History[unknown].Attachment["key.pem"]: <sealed:9fe344a1> (40 bytes, protected)
+  - History[unknown].QualityCheck: true
+  - History[unknown].Icon: standard 0
+  - History[unknown].AutoType.Enabled: true
+  - History[unknown].AutoType.DefaultSequence: "{USERNAME}{TAB}{PASSWORD}{ENTER}"
+  - History[unknown].AutoType.DataTransferObfuscation: none
+  - History[unknown].AutoType.Association["Bank*"]: "{PASSWORD}"
+  - History[unknown].AutoType.Association["Bank*"#2]: "{USERNAME}"
+  - History[unknown].CreationTime: 2026-01-01T09:00:00Z
+  - History[unknown].Expires: false
+  - History[unknown].CustomData["KPXC_BROWSER"]: <sealed:d4135488>
+  ~ History[2026-01-02T09:00:00Z#2].URL: "https://card.example/v1" -> "https://card.example/v1-rewritten"
+~ ENTRY "/Tour/Moved" (moved from "/Old/Moved")
+~ ENTRY (no path) [uuid:00000022-d1ff-4000-8000-000000000000]
+  ~ UserName: "nobody" -> "somebody"

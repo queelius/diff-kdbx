@@ -1,0 +1,30 @@
+---
+source: tests/snapshots.rs
+expression: "render_json(&cs, &JsonOptions::default())"
+---
+{
+  "format_version": 1,
+  "fingerprint_key": null,
+  "changes": [
+    {
+      "scope": "entry",
+      "uuid": "00000012-d1ff-4000-8000-000000000000",
+      "path": "/Personal/Email",
+      "status": "removed"
+    }
+  ],
+  "summary": {
+    "entries_added": 0,
+    "entries_removed": 1,
+    "entries_modified": 0,
+    "entries_moved": 0,
+    "groups_added": 0,
+    "groups_removed": 0,
+    "groups_modified": 0,
+    "groups_moved": 0,
+    "node_properties": 0,
+    "database_properties": 0,
+    "suppressed": 0
+  },
+  "warnings": []
+}

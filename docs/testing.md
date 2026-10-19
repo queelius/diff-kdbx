@@ -1,161 +1,83 @@
 # Testing diff-kdbx
 
-This document describes the test architecture: what each layer covers, how
-to run, and how fixtures are managed.
+The test architecture: what each layer covers, how to run it, and how
+fixtures are managed.
 
 ## Goals
 
-The test apparatus is designed to:
+1. **Travel with the repo.** A fresh clone (next to `kdbx-core`) plus
+   `cargo test --features cli` runs the full suite. No external state, no
+   network, no manual setup.
+2. **Be honest about provenance.** Every fixture is documented in
+   `tests/fixtures/MANIFEST.md` with origin, password, contents and
+   regeneration.
+3. **Cover real workflows.** Not just exit codes, but git itself, configured
+   with the textconv driver, producing meaningful `git diff` / `log -p` /
+   `show` / clone / pull output.
+4. **Pin contracts.** The JSON shape, the dump format and the public API are
+   pinned by tests, so changing one is a deliberate act.
 
-1. **Travel with the repo.** Fresh `git clone` plus `cargo test --features cli`
-   runs the full default suite. No external state, no network, no manual setup.
-2. **Be honest about provenance.** Every fixture file is documented in
-   `tests/fixtures/MANIFEST.md` with origin, password, contents, and
-   regeneration procedure.
-3. **Cover real workflows.** Not just "the binary returns the right exit code"
-   but also "git itself, configured with our textconv driver, produces
-   meaningful output for git diff / log / show / clone / push / pull."
-4. **Run fast.** Default suite under 10 seconds. No skipped-by-default tests
-   for things that should work.
+## Layers
 
-## Test pyramid (five layers)
-
-```
-+----------------------------------------------------------+
-|  Layer 5: Remote roundtrip                              |   ~3 tests
-|    tempdir/origin.git (bare) + clone-a + clone-b         |
-|    real git push/fetch/pull/clone, real textconv         |
-|    no GitHub, no network, no auth                        |
-+----------------------------------------------------------+
-|  Layer 4: Local .git integration                        |   ~5 tests
-|    tempdir + git init + textconv driver configured       |
-|    real git diff / log -p / show against committed       |
-|    fixtures                                              |
-+----------------------------------------------------------+
-|  Layer 3: Determinism                                   |   3 tests
-|    multi-process byte-stability of dump/diff outputs     |
-+----------------------------------------------------------+
-|  Layer 2: CLI integration                               |   ~10 tests
-|    assert_cmd against the binary, fixture-based          |
-|    standalone diff, --textconv, --format=json,           |
-|    --show-secrets, exit-code policy                      |
-+----------------------------------------------------------+
-|  Layer 1: Unit                                          |   ~50 tests
-|    in-process tests for path, mask, options, change_set, |
-|    compute, dump, render::text, render::json             |
-|    no I/O                                                |
-+----------------------------------------------------------+
-```
-
-Each layer adds exactly one new dimension of risk:
-
-- Layer 1 catches per-module logic errors.
-- Layer 2 catches integration errors (CLI flag parsing, file I/O, exit codes).
-- Layer 3 catches nondeterminism that would break the textconv contract.
-- Layer 4 catches integration errors with `git` itself: driver config syntax,
-  whether stdin/stdout/stderr are wired correctly, whether `git diff` actually
-  invokes the driver, whether the driver's exit code propagates appropriately.
-- Layer 5 catches errors that only manifest after a clone: are .gitattributes
-  carried correctly, does the driver need re-configuring per-clone (yes, it
-  does), is the diff output stable across clones.
+| Layer | Suite | What it catches |
+|---|---|---|
+| 1. Unit | `cargo test --lib` (77) and the binary's own (1) | Logic of each module on hand-built snapshots: property mapping (with serde tripwires that fail when kdbx-core adds a model field nobody maps), change-set shapes, compute rules (moves, renames, protection toggles, history at the cap, noise, recycle bin, KDF weakening), dump and renderer formats, the label and value grammar read back from rendered lines, every JSON wire leaf |
+| 2. Snapshots | `tests/snapshots.rs`, `tests/format_doc.rs` | Text, JSON and dump output of every fixture pair, pinned with `insta` (the JSON contract lives here); no trailing whitespace in any of it; every example in `docs/FORMAT.md` is real output |
+| 3. CLI | `tests/integration.rs`, `tests/cli.rs` | Flag parsing, key resolution (password, key file, key-file only, separate keys), the `fingerprint` subcommand, exit codes, every fixture end to end |
+| 4. Properties | `tests/mirror.rs` | proptest over generated snapshots (trees, history, recycle bin, headers): `compute(a, a)` is empty and `compute(a, b)` mirrors `compute(b, a)` |
+| 4b. Canary | `tests/canary.rs` | No secret of any fixture vault (read from the vault itself) appears in any text, JSON or dump output |
+| 5. API | `tests/public_api.rs` | Every public item, signature, field and enum variant, named from outside the crate |
+| 6. Determinism | `tests/determinism.rs` | Byte-stable dump and diff output across processes |
+| 7. Git driver | `tests/git_driver.rs` | Real `git diff` / `log -p` / `show` with the driver, fail-closed on a wrong password |
+| 8. Remote roundtrip | `tests/remote_roundtrip.rs` | A bare repo as remote: push, clone, pull, per-clone driver setup |
 
 ## Running
 
-| Command | Layers | Purpose |
-|---|---|---|
-| `cargo test --lib` | 1 | Fastest; iterate on a single module |
-| `cargo test --features cli` | 1, 2, 3, 4, 5 | Full default suite |
-| `cargo test --features cli --test git_driver` | 4 only | Iterate on driver-config tests |
-| `cargo test --features cli --test remote_roundtrip` | 5 only | Iterate on push/pull tests |
-| `cargo test --features cli -- --nocapture` | all + log | See git stderr/stdout when debugging |
+| Command | Purpose |
+|---|---|
+| `cargo test --lib` | Fastest; no keepass, no I/O |
+| `cargo test --features cli` | Everything |
+| `cargo test --features cli --test git_driver` | One suite |
+| `cargo test --features cli <pattern>` | Tests matching a name |
+| `cargo test --features cli -- --nocapture` | See git output when debugging |
 
-External dependencies:
+External dependencies: `cargo`, and `git` for the git-driver and roundtrip
+suites. No `gh`, no network.
 
-- `cargo` (always required)
-- `git` (required for layers 4 and 5; standard on developer machines and CI)
+Every CLI invocation derives a fingerprint key with Argon2id: the vault's own
+parameters when they cost (memory x passes) at least the 64 MiB x 3 floor,
+else the floor. The fixtures use a deliberately cheap KDF, so tests derive at
+the floor.
 
-That's it. No `gh`, no `glab`, no network access, no test repos to provision.
+## Fixtures
 
-## Fixture management
-
-All KDBX fixtures live under `tests/fixtures/<name>/{before,after}.kdbx`. Each
-is documented in `tests/fixtures/MANIFEST.md` with:
-
-- **Origin**: synthetic via `gen-fixtures`, KeePassXC-Copy-As, or external.
-- **Master password**: `test-password-do-not-use` for everything synthetic.
-- **Contents**: what semantic state the file represents.
-- **Regeneration**: how to recreate it.
-
-Synthetic fixtures regenerate via:
+All fixtures live under `tests/fixtures/`, documented in `MANIFEST.md`.
+Synthetic ones regenerate with:
 
 ```bash
-cargo run --features cli --bin gen-fixtures
+cargo run --example gen_fixtures
+INSTA_UPDATE=always cargo test --test snapshots   # then review every diff
 ```
 
-This produces deterministic content (modulo upstream `keepass-rs` limitations
-around UUID setters; see MANIFEST.md). Re-running may change UUIDs but should
-not change the semantic test surface.
+Content is reproducible (fixed UUIDs, every timestamp frozen); the encrypted
+bytes change on every save. Unit tests and `tests/cli.rs` build their own
+snapshots and vaults instead of using fixtures.
 
-KeePassXC-generated fixtures (currently none committed) require a manual
-procedure documented per-fixture in MANIFEST.md.
+## Adding a test
 
-## Adding a new test
-
-**Layer 1 (unit):** add `#[test]` inside the relevant `mod test` block in
-`src/<module>.rs`. Use in-memory `keepass::Database` builders; no I/O.
-
-**Layer 2 (CLI integration):** add a `#[test]` to `tests/integration.rs`.
-Use `assert_cmd::Command::cargo_bin("diff-kdbx")` and reference fixture paths
-relative to the crate root.
-
-**Layer 3 (determinism):** add a `#[test]` to `tests/determinism.rs`. Run the
-binary twice in separate subprocesses; assert byte-equality.
-
-**Layer 4 (git driver):** add a `#[test]` to `tests/git_driver.rs`. Use the
-`setup_repo` helper for the standard tempdir + git init + driver config flow.
-Use `git()` for assertions-on-success or `git_no_panic()` when you expect a
-nonzero exit.
-
-**Layer 5 (remote roundtrip):** add a `#[test]` to `tests/remote_roundtrip.rs`.
-Use the `setup_world` helper which gives you `(tempdir, origin.git, clone-a)`.
-Add a clone-b yourself when needed.
-
-## Adding a new fixture
-
-1. Generate the fixture (extend `gen-fixtures` for synthetic; document the
-   manual procedure for KeePassXC-generated).
-2. Add an entry to `tests/fixtures/MANIFEST.md` filling in all four
-   provenance fields.
-3. Reference the new fixture in tests that need it.
-4. If a previously-`#[ignore]`d test depended on the fixture, remove the
-   ignore attribute.
+- **Unit:** next to the module (`src/<module>/tests.rs` or a `mod tests`),
+  building snapshots with `src/test_support.rs`. Use `crate::test_support::key()`
+  for sealed values, so fingerprints are stable.
+- **CLI:** `tests/integration.rs` for fixture pairs, `tests/cli.rs` for
+  behavior that needs its own vault (`common::cheap_db`, `common::save`).
+- **A new fixture pair** is picked up by `tests/snapshots.rs` automatically;
+  add a `pair(...)` in `examples/gen_fixtures.rs`, a row in `MANIFEST.md`, and
+  an integration test for the behavior it isolates.
 
 ## What we deliberately don't test
 
-- **Real-world KDBX files in CI.** Personal vaults stay personal. Test
-  fixtures are throwaway material with a published password.
-- **Real GitHub / GitLab / etc.** The textconv driver doesn't care about the
-  remote. Layer 5 uses a local bare repo and exercises the same protocol.
-  If you want manual end-to-end validation against a real provider, configure
-  a test repo on that provider and follow the README's "Hands-on getting
-  started" walkthrough (steps 4-9). But it's not part of the automated suite.
-- **Cross-implementation roundtrips with KeePassXC.** Future work; would
-  require KeePassXC on the test runner. See "manual smoke tests" below.
-
-## Manual smoke tests
-
-Some validation requires real-world ingredients we don't ship in CI. These
-are documented procedures, not automated tests:
-
-- **Real-vault diff.** Run `diff-kdbx` against your own personal vault to
-  confirm the dump format is sensible. See the README's "Hands-on getting
-  started" walkthrough.
-- **KeePassXC roundtrip.** Open a synthetic fixture in KeePassXC, edit it,
-  save, then diff against the original. Validates that our writer's output
-  is interoperable with KeePassXC's reader (and vice versa). Requires
-  KeePassXC installed.
-- **Cross-platform.** Tests should pass on Linux, macOS, and Windows. CI
-  currently runs Linux only; macOS and Windows are spot-checked manually.
-
-When discoveries from manual smoke tests should become regression tests, add
-a fixture and an automated test. That's how the apparatus grows.
+- **Real vaults.** Fixtures are throwaway material with a published password.
+- **Real git hosting.** The remote roundtrip uses a local bare repository.
+- **KeePassXC interop in CI.** It would need KeePassXC on the runner. As a
+  manual smoke test: open a fixture in KeePassXC, edit, save, and diff
+  against the original.

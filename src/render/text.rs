@@ -1,292 +1,396 @@
-//! Tree-shaped text rendering of a ChangeSet.
+//! The tree-shaped human-readable rendering of a change set.
 
-use crate::change_set::{
-    Change, ChangeSet, DatabaseChange, EntryChangeKind, FieldChange, GroupChangeKind, Summary,
-    ValueChange, ValueDisplay,
-};
-use crate::options::RenderOptions;
 use std::fmt::Write as _;
 
-pub fn render(cs: &ChangeSet, _opts: &RenderOptions) -> String {
+use kdbx_core::path::VaultPath;
+use kdbx_core::text::continuation_lines;
+use uuid::Uuid;
+
+use super::{CONTINUATION, ValueText, kdf_name, path_token};
+use crate::change_set::{
+    Change, ChangeSet, DiffWarning, KdfWeakening, NodeChange, NodeStatus, PropertyChange, Summary,
+};
+
+/// Options for [`render_text`]. None yet; the parameter exists so options
+/// can be added without breaking callers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct TextOptions {}
+
+/// Render a change set as text: a summary line, one `warning:` line per
+/// warning, then one block per changed node (`+`, `-` or `~`, the kind, the
+/// path) with one line per property change. Prints `(no changes)` when there
+/// are none.
+///
+/// Every name and value is rendered through `kdbx_core::text` (inline
+/// escapes, or `| ` continuation lines for multi-line values), so no vault
+/// content can forge a structural line.
+pub fn render_text(cs: &ChangeSet, _opts: &TextOptions) -> String {
     let mut out = String::new();
-    render_summary(&cs.summary, &mut out);
-    render_warnings(&cs.warnings, &mut out);
+    summary(&cs.summary, &mut out);
+    for w in &cs.warnings {
+        let _ = writeln!(out, "warning: {}", warning(w));
+    }
     if cs.changes.is_empty() {
-        let _ = writeln!(out, "(no changes)");
-        return out;
+        out.push_str("(no changes)\n");
     }
     for change in &cs.changes {
-        render_change(change, &mut out);
+        match change {
+            Change::Database { changes } => {
+                out.push_str("DATABASE\n");
+                properties(changes, &mut out);
+            }
+            Change::Group(node) => record("GROUP", node, &mut out),
+            Change::Entry(node) => record("ENTRY", node, &mut out),
+        }
     }
     out
 }
 
-fn render_summary(s: &Summary, out: &mut String) {
+fn summary(s: &Summary, out: &mut String) {
     let _ = writeln!(
         out,
-        "summary: +{}/-{}/~{} entries, +{}/-{}/~{} groups, {} fields, {} suppressed",
+        "summary: entries +{}/-{}/~{} ({} moved), groups +{}/-{}/~{} ({} moved), \
+         properties {}, database {}, suppressed {}",
         s.entries_added,
         s.entries_removed,
         s.entries_modified,
+        s.entries_moved,
         s.groups_added,
         s.groups_removed,
         s.groups_modified,
-        s.fields_changed,
+        s.groups_moved,
+        s.node_properties,
+        s.database_properties,
         s.suppressed,
     );
 }
 
-fn render_warnings(warnings: &[crate::change_set::DiffWarning], out: &mut String) {
-    use crate::change_set::DiffWarning;
-    for w in warnings {
-        let _ = match w {
-            DiffWarning::VersionMismatch { a, b } => {
-                writeln!(out, "warning: KDBX version differs: {a} -> {b}")
-            }
-            DiffWarning::HashCollision { .. } => writeln!(
-                out,
-                "warning: two different values share an 8-character masked hash"
-            ),
-        };
-    }
-}
-
-fn render_change(c: &Change, out: &mut String) {
-    match c {
-        Change::Database(d) => render_database(d, out),
-        Change::Group { path, kind, .. } => render_group(path, kind, out),
-        Change::Entry { path, kind, .. } => render_entry(path, kind, out),
-    }
-}
-
-fn render_database(d: &DatabaseChange, out: &mut String) {
-    match d {
-        DatabaseChange::NameChanged { from, to } => {
-            let _ = writeln!(out, "DATABASE name: {} -> {}", from, to);
+fn warning(w: &DiffWarning) -> String {
+    match w {
+        DiffWarning::VersionMismatch { before, after } => {
+            format!("KDBX version differs: {before} -> {after}")
         }
-        DatabaseChange::ColorChanged { from, to } => {
-            let _ = writeln!(out, "DATABASE color: {:?} -> {:?}", from, to);
-        }
-        DatabaseChange::RecycleBinChanged { from, to } => {
-            let _ = writeln!(out, "DATABASE recycle_bin: {:?} -> {:?}", from, to);
-        }
-        DatabaseChange::CustomDataModified { key, change } => {
-            let _ = writeln!(
-                out,
-                "DATABASE custom_data[{}]: {}",
-                key,
-                fmt_value_change(change)
-            );
-        }
-        DatabaseChange::CustomDataAdded { key, value } => {
-            let _ = writeln!(
-                out,
-                "DATABASE custom_data[{}] = {}",
-                key,
-                fmt_value_display(value)
-            );
-        }
-        DatabaseChange::CustomDataRemoved { key, value } => {
-            let _ = writeln!(
-                out,
-                "DATABASE custom_data[{}] removed (was {})",
-                key,
-                fmt_value_display(value)
-            );
+        DiffWarning::KdfWeakened { weakening } => {
+            let how = match weakening {
+                KdfWeakening::NoLongerMemoryHard { before, after } => format!(
+                    "{} replaced by {}, which is not memory-hard",
+                    kdf_name(*before),
+                    kdf_name(*after)
+                ),
+                KdfWeakening::Unrecognized { before } => {
+                    format!("{} replaced by an unrecognized KDF", kdf_name(*before))
+                }
+                KdfWeakening::MemoryLowered { before, after } => {
+                    format!("memory lowered from {before} to {after} bytes")
+                }
+                KdfWeakening::IterationsLowered { before, after } => {
+                    format!("iterations lowered from {before} to {after}")
+                }
+                KdfWeakening::RoundsLowered { before, after } => {
+                    format!("rounds lowered from {before} to {after}")
+                }
+            };
+            format!("KDF weakened: {how}")
         }
     }
 }
 
-fn render_group(path: &crate::path::Path, kind: &GroupChangeKind, out: &mut String) {
-    match kind {
-        GroupChangeKind::Added => {
-            let _ = writeln!(out, "+ GROUP {}", path.display);
-        }
-        GroupChangeKind::Removed => {
-            let _ = writeln!(out, "- GROUP {}", path.display);
-        }
-        GroupChangeKind::Moved { to } => {
-            let _ = writeln!(out, "~ GROUP {} -> {}", path.display, to.display);
-        }
-        GroupChangeKind::Renamed { from, to } => {
-            let _ = writeln!(
-                out,
-                "~ GROUP {} (renamed: {} -> {})",
-                path.display, from, to
-            );
-        }
-        GroupChangeKind::PropertiesChanged { fields } => {
-            let _ = writeln!(out, "~ GROUP {}", path.display);
-            for f in fields {
-                render_field(f, out);
-            }
-        }
+/// A node's address in the diff: its path, or its UUID when it has none.
+fn address(path: Option<&VaultPath>, uuid: Uuid) -> String {
+    match path {
+        Some(p) => path_token(p),
+        None => format!("(no path) [uuid:{uuid}]"),
     }
 }
 
-fn render_entry(path: &crate::path::Path, kind: &EntryChangeKind, out: &mut String) {
-    match kind {
-        EntryChangeKind::Added => {
-            let _ = writeln!(out, "+ ENTRY {}", path.display);
+fn record(keyword: &str, node: &NodeChange, out: &mut String) {
+    let at = address(node.path.as_ref(), node.uuid);
+    match &node.status {
+        NodeStatus::Added => {
+            let _ = writeln!(out, "+ {keyword} {at}");
         }
-        EntryChangeKind::Removed => {
-            let _ = writeln!(out, "- ENTRY {}", path.display);
+        NodeStatus::Removed => {
+            let _ = writeln!(out, "- {keyword} {at}");
         }
-        EntryChangeKind::Moved { to } => {
-            let _ = writeln!(out, "~ ENTRY {} -> {}", path.display, to.display);
-        }
-        EntryChangeKind::Modified { fields } => {
-            let _ = writeln!(out, "~ ENTRY {}", path.display);
-            for f in fields {
-                render_field(f, out);
-            }
-        }
-    }
-}
-
-fn render_field(f: &FieldChange, out: &mut String) {
-    match f {
-        FieldChange::Added { name, value } => {
-            let _ = writeln!(out, "  + {}: {}", name, fmt_value_display(value));
-        }
-        FieldChange::Removed { name, value } => {
-            let _ = writeln!(out, "  - {}: {}", name, fmt_value_display(value));
-        }
-        FieldChange::Modified { name, change } => {
-            let _ = writeln!(out, "  ~ {}: {}", name, fmt_value_change(change));
-        }
-        FieldChange::TagAdded { tag } => {
-            let _ = writeln!(out, "  + tag: {}", tag);
-        }
-        FieldChange::TagRemoved { tag } => {
-            let _ = writeln!(out, "  - tag: {}", tag);
-        }
-        FieldChange::AttachmentAdded { name, hash } => {
-            let _ = writeln!(out, "  + attachment {} <hash:{}>", name, hash);
-        }
-        FieldChange::AttachmentRemoved { name, hash } => {
-            let _ = writeln!(out, "  - attachment {} <hash:{}>", name, hash);
-        }
-        FieldChange::AttachmentModified {
-            name,
-            from_hash,
-            to_hash,
+        NodeStatus::Modified {
+            moved_from,
+            changes,
         } => {
-            let _ = writeln!(
-                out,
-                "  ~ attachment {} [<hash:{}> -> <hash:{}>]",
-                name, from_hash, to_hash
-            );
-        }
-        FieldChange::HistoryGrew { added } => {
-            let _ = writeln!(out, "  H {} history entries added", added);
-        }
-        FieldChange::HistoryRewritten { from_len, to_len } => {
-            let _ = writeln!(out, "  H history rewritten: {} -> {}", from_len, to_len);
-        }
-        FieldChange::TimeChanged { field, from, to } => {
-            let show = |v: &Option<String>| v.as_deref().unwrap_or("(none)").to_owned();
-            let _ = writeln!(
-                out,
-                "  ~ {}: {} -> {}",
-                field.kdbx_name(),
-                show(from),
-                show(to)
-            );
+            let _ = write!(out, "~ {keyword} {at}");
+            if let Some(from) = moved_from {
+                let _ = write!(out, " (moved from {})", path_token(from));
+            }
+            out.push('\n');
+            properties(changes, out);
         }
     }
 }
 
-fn fmt_value_display(v: &ValueDisplay) -> String {
-    match v {
-        ValueDisplay::Plain { value } => value.clone(),
-        ValueDisplay::Masked { hash } => format!("<hash:{}>", hash),
+fn properties(changes: &[PropertyChange], out: &mut String) {
+    for c in changes {
+        let label = c.property.to_string();
+        match (&c.before, &c.after) {
+            (None, Some(v)) => ValueText::of(&c.property, v).write(out, "  ", "+ ", &label),
+            (Some(v), None) => ValueText::of(&c.property, v).write(out, "  ", "- ", &label),
+            (Some(a), Some(b)) => modified(
+                &label,
+                ValueText::of(&c.property, a),
+                ValueText::of(&c.property, b),
+                out,
+            ),
+            (None, None) => {}
+        }
     }
 }
 
-fn fmt_value_change(c: &ValueChange) -> String {
-    format!(
-        "{} -> {}",
-        fmt_value_display(&c.from),
-        fmt_value_display(&c.to)
-    )
+/// A modified property: `~ label: before -> after` on one line, or, when
+/// either side is multi-line text, a `~ label:` line followed by the before
+/// lines (`-`) and the after lines (`+`).
+fn modified(label: &str, before: ValueText<'_>, after: ValueText<'_>, out: &mut String) {
+    if before.block.is_none() && after.block.is_none() {
+        let _ = writeln!(out, "  ~ {label}: {} -> {}", before.inline, after.inline);
+        return;
+    }
+    let _ = writeln!(out, "  ~ {label}:");
+    for (sign, side) in [("-", before), ("+", after)] {
+        let lead = format!("      {sign} ");
+        if !side.inline.is_empty() {
+            let _ = writeln!(out, "{lead}{}", side.inline);
+        }
+        if let Some(text) = side.block {
+            let prefix = format!("{lead}{CONTINUATION}");
+            for line in continuation_lines(text, &prefix) {
+                out.push_str(&line);
+                out.push('\n');
+            }
+        }
+    }
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
+    use kdbx_core::model::{FormatVersion, Value};
+
     use super::*;
-    use crate::change_set::{Change, DatabaseChange};
+    use crate::properties::{FieldName, KdfKind, Property, Shown};
 
-    #[test]
-    fn empty_change_set_renders_no_changes_line() {
-        let cs = ChangeSet::default();
-        let out = render(&cs, &RenderOptions::default());
-        assert!(out.contains("(no changes)"));
+    fn path(s: &str) -> Option<VaultPath> {
+        Some(VaultPath::parse(s).unwrap())
+    }
+
+    fn field(name: &str) -> Property {
+        Property::Field(FieldName::new(name))
+    }
+
+    fn plain(s: &str) -> Option<Shown> {
+        Some(Shown::Field {
+            protected: false,
+            value: Value::Plain(s.into()),
+        })
+    }
+
+    fn sealed(n: u8) -> Option<Shown> {
+        Some(Shown::Field {
+            protected: true,
+            value: Value::Sealed(kdbx_core::fingerprint::Fingerprint::from_bytes([n; 32])),
+        })
+    }
+
+    fn entry(n: u128, p: &str, status: NodeStatus) -> Change {
+        Change::Entry(NodeChange::new(Uuid::from_u128(n), path(p), status))
     }
 
     #[test]
-    fn database_rename_renders() {
-        let cs = ChangeSet {
-            changes: vec![Change::Database(DatabaseChange::NameChanged {
-                from: "old".into(),
-                to: "new".into(),
-            })],
-            summary: Summary {
-                metadata_changed: 1,
-                ..Default::default()
-            },
-            warnings: vec![],
-        };
-        let out = render(&cs, &RenderOptions::default());
-        assert!(out.contains("DATABASE name: old -> new"));
+    fn empty_change_set() {
+        assert_eq!(
+            render_text(&ChangeSet::new(vec![], vec![], 6), &TextOptions::default()),
+            "summary: entries +0/-0/~0 (0 moved), groups +0/-0/~0 (0 moved), \
+             properties 0, database 0, suppressed 6\n(no changes)\n"
+        );
     }
 
     #[test]
-    fn summary_line_contains_change_counts() {
-        let cs = ChangeSet {
-            changes: vec![],
-            summary: Summary {
-                entries_added: 5,
-                entries_removed: 2,
-                entries_modified: 3,
-                groups_added: 1,
-                groups_removed: 0,
-                groups_modified: 2,
-                fields_changed: 10,
-                suppressed: 1,
-                ..Default::default()
-            },
-            warnings: vec![],
-        };
-        let out = render(&cs, &RenderOptions::default());
-        assert!(out.contains("+5/-2/~3"));
-        assert!(out.contains("+1/-0/~2"));
-        assert!(out.contains("10 fields"));
-        assert!(out.contains("1 suppressed"));
-    }
-
-    #[test]
-    fn field_addition_renders() {
-        let cs = ChangeSet {
-            changes: vec![Change::Entry {
-                uuid: uuid::Uuid::nil(),
-                path: crate::path::Path {
-                    display: "/test".into(),
-                    uuids: vec![],
+    fn full_rendering_is_pinned() {
+        let cs = ChangeSet::new(
+            vec![
+                Change::Database {
+                    changes: vec![PropertyChange::new(
+                        Property::Meta(crate::MetaKey::DatabaseName),
+                        Some(Shown::Text("Old".into())),
+                        Some(Shown::Text("New".into())),
+                    )],
                 },
-                kind: EntryChangeKind::Modified {
-                    fields: vec![FieldChange::Added {
-                        name: "Title".into(),
-                        value: ValueDisplay::Plain {
-                            value: "MyEntry".into(),
-                        },
-                    }],
+                Change::Group(NodeChange::new(
+                    Uuid::from_u128(3),
+                    path("/Office/"),
+                    NodeStatus::Modified {
+                        moved_from: None,
+                        changes: vec![PropertyChange::new(
+                            Property::Name,
+                            Some(Shown::Text("Work".into())),
+                            Some(Shown::Text("Office".into())),
+                        )],
+                    },
+                )),
+                entry(0x14, "/Office/GitHub", NodeStatus::Added),
+                entry(0x12, "/Personal/Email", NodeStatus::Removed),
+                entry(
+                    0x13,
+                    "/Personal/VPN",
+                    NodeStatus::Modified {
+                        moved_from: path("/Office/VPN"),
+                        changes: vec![
+                            PropertyChange::new(field("Password"), sealed(0x12), sealed(0x34)),
+                            PropertyChange::new(field("Notes"), plain("a\nb"), plain("a\nc")),
+                            PropertyChange::new(
+                                Property::Tag("vpn".into()),
+                                None,
+                                Some(Shown::Present),
+                            ),
+                            PropertyChange::new(field("otp"), sealed(0x56), None),
+                        ],
+                    },
+                ),
+                Change::Entry(NodeChange::new(
+                    Uuid::from_u128(0x15),
+                    None,
+                    NodeStatus::Added,
+                )),
+            ],
+            vec![
+                DiffWarning::VersionMismatch {
+                    before: FormatVersion::KDBX_4_0,
+                    after: FormatVersion::KDBX_4_1,
                 },
-            }],
-            summary: Summary::default(),
-            warnings: vec![],
-        };
-        let out = render(&cs, &RenderOptions::default());
-        assert!(out.contains("+ Title: MyEntry"));
+                DiffWarning::KdfWeakened {
+                    weakening: KdfWeakening::NoLongerMemoryHard {
+                        before: KdfKind::Argon2d,
+                        after: KdfKind::AesKdf,
+                    },
+                },
+            ],
+            0,
+        );
+        assert_eq!(
+            render_text(&cs, &TextOptions::default()),
+            r#"summary: entries +2/-1/~1 (1 moved), groups +0/-0/~1 (0 moved), properties 5, database 1, suppressed 0
+warning: KDBX version differs: 4.0 -> 4.1
+warning: KDF weakened: Argon2d replaced by AES-KDF, which is not memory-hard
+DATABASE
+  ~ DatabaseName: "Old" -> "New"
+~ GROUP "/Office/"
+  ~ Name: "Work" -> "Office"
++ ENTRY "/Office/GitHub"
+- ENTRY "/Personal/Email"
+~ ENTRY "/Personal/VPN" (moved from "/Office/VPN")
+  ~ Password: <sealed:12121212> -> <sealed:34343434>
+  ~ Notes:
+      - | a
+      - | b
+      + | a
+      + | c
+  + Tag["vpn"]
+  - "otp": <sealed:56565656>
++ ENTRY (no path) [uuid:00000000-0000-0000-0000-000000000015]
+"#
+        );
+    }
+
+    #[test]
+    fn protection_toggles_are_visible() {
+        let unprotected = Some(Shown::Field {
+            protected: false,
+            value: Value::Sealed(kdbx_core::fingerprint::Fingerprint::from_bytes([0x12; 32])),
+        });
+        let cs = ChangeSet::new(
+            vec![entry(
+                1,
+                "/x",
+                NodeStatus::Modified {
+                    moved_from: None,
+                    changes: vec![
+                        PropertyChange::new(field("Password"), sealed(0x12), unprotected),
+                        PropertyChange::new(
+                            field("Title"),
+                            plain("Bank"),
+                            Some(Shown::Field {
+                                protected: true,
+                                value: Value::Plain("Bank".into()),
+                            }),
+                        ),
+                    ],
+                },
+            )],
+            vec![],
+            0,
+        );
+        let out = render_text(&cs, &TextOptions::default());
+        assert!(
+            out.contains("  ~ Password: <sealed:12121212> -> <sealed:12121212> (unprotected)\n"),
+            "{out}"
+        );
+        assert!(
+            out.contains("  ~ Title: \"Bank\" -> \"Bank\" (protected)\n"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn blank_pieces_of_a_multi_line_change_carry_no_trailing_whitespace() {
+        let cs = ChangeSet::new(
+            vec![entry(
+                1,
+                "/x",
+                NodeStatus::modified(
+                    None,
+                    vec![PropertyChange::new(
+                        field("Notes"),
+                        plain("a\n\nb"),
+                        plain("a\n\nc"),
+                    )],
+                ),
+            )],
+            vec![],
+            0,
+        );
+        let out = render_text(&cs, &TextOptions::default());
+        assert!(
+            out.contains("  ~ Notes:\n      - | a\n      - |\n      - | b\n      + | a\n      + |\n      + | c\n"),
+            "{out:?}"
+        );
+        assert!(out.lines().all(|l| l == l.trim_end()), "{out:?}");
+    }
+
+    #[test]
+    fn kdf_warnings_render() {
+        let w = |weakening| warning(&DiffWarning::KdfWeakened { weakening });
+        assert_eq!(
+            w(KdfWeakening::MemoryLowered {
+                before: 2,
+                after: 1
+            }),
+            "KDF weakened: memory lowered from 2 to 1 bytes"
+        );
+        assert_eq!(
+            w(KdfWeakening::Unrecognized {
+                before: KdfKind::Argon2id
+            }),
+            "KDF weakened: Argon2id replaced by an unrecognized KDF"
+        );
+        assert_eq!(
+            w(KdfWeakening::IterationsLowered {
+                before: 3,
+                after: 2
+            }),
+            "KDF weakened: iterations lowered from 3 to 2"
+        );
+        assert_eq!(
+            w(KdfWeakening::RoundsLowered {
+                before: 9,
+                after: 8
+            }),
+            "KDF weakened: rounds lowered from 9 to 8"
+        );
     }
 }

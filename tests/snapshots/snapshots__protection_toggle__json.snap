@@ -1,0 +1,74 @@
+---
+source: tests/snapshots.rs
+expression: "render_json(&cs, &JsonOptions::default())"
+---
+{
+  "format_version": 1,
+  "fingerprint_key": null,
+  "changes": [
+    {
+      "scope": "entry",
+      "uuid": "00000011-d1ff-4000-8000-000000000000",
+      "path": "/Personal/Bank",
+      "status": "modified",
+      "moved_from": null,
+      "changes": [
+        {
+          "property": {
+            "kind": "field",
+            "key": "Password"
+          },
+          "before": {
+            "type": "field",
+            "protected": true,
+            "sealed": "83b20c03773abb3999a1d9c2b26caa8130dad3f06fbad82c1dfc09eac7685729"
+          },
+          "after": {
+            "type": "field",
+            "protected": false,
+            "sealed": "83b20c03773abb3999a1d9c2b26caa8130dad3f06fbad82c1dfc09eac7685729"
+          }
+        }
+      ]
+    },
+    {
+      "scope": "entry",
+      "uuid": "00000012-d1ff-4000-8000-000000000000",
+      "path": "/Personal/Email",
+      "status": "modified",
+      "moved_from": null,
+      "changes": [
+        {
+          "property": {
+            "kind": "field",
+            "key": "otp"
+          },
+          "before": {
+            "type": "field",
+            "protected": true,
+            "sealed": "af5c6854af6060524afb88904839e63f2162d3c6922cde2ea9eea9bc695193b8"
+          },
+          "after": {
+            "type": "field",
+            "protected": false,
+            "text": "otpauth://totp/Email?secret=JBSWY3DPEHPK3PXP"
+          }
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "entries_added": 0,
+    "entries_removed": 0,
+    "entries_modified": 2,
+    "entries_moved": 0,
+    "groups_added": 0,
+    "groups_removed": 0,
+    "groups_modified": 0,
+    "groups_moved": 0,
+    "node_properties": 2,
+    "database_properties": 0,
+    "suppressed": 6
+  },
+  "warnings": []
+}

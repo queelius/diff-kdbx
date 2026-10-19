@@ -1,0 +1,23 @@
+---
+source: tests/snapshots.rs
+expression: "render_json(&cs, &JsonOptions::default())"
+---
+{
+  "format_version": 1,
+  "fingerprint_key": null,
+  "changes": [],
+  "summary": {
+    "entries_added": 0,
+    "entries_removed": 0,
+    "entries_modified": 0,
+    "entries_moved": 0,
+    "groups_added": 0,
+    "groups_removed": 0,
+    "groups_modified": 0,
+    "groups_moved": 0,
+    "node_properties": 0,
+    "database_properties": 0,
+    "suppressed": 6
+  },
+  "warnings": []
+}

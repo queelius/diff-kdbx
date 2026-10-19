@@ -1,0 +1,49 @@
+---
+source: tests/snapshots.rs
+expression: "render_json(&cs, &JsonOptions::default())"
+---
+{
+  "format_version": 1,
+  "fingerprint_key": null,
+  "changes": [
+    {
+      "scope": "entry",
+      "uuid": "00000011-d1ff-4000-8000-000000000000",
+      "path": "/Personal/Bank",
+      "status": "modified",
+      "moved_from": null,
+      "changes": [
+        {
+          "property": {
+            "kind": "field",
+            "key": "Title"
+          },
+          "before": {
+            "type": "field",
+            "protected": false,
+            "text": "Bank"
+          },
+          "after": {
+            "type": "field",
+            "protected": true,
+            "text": "Bank"
+          }
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "entries_added": 0,
+    "entries_removed": 0,
+    "entries_modified": 1,
+    "entries_moved": 0,
+    "groups_added": 0,
+    "groups_removed": 0,
+    "groups_modified": 0,
+    "groups_moved": 0,
+    "node_properties": 1,
+    "database_properties": 0,
+    "suppressed": 3
+  },
+  "warnings": []
+}

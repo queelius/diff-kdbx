@@ -8,8 +8,9 @@ Add to `~/.gitconfig`:
 [diff "kdbx"]
     textconv = diff-kdbx --textconv
     binary = true
-    cachetextconv = true
 ```
+
+Caching is deliberately absent: see "Caching" below before turning it on.
 
 ## Per-repo override
 
@@ -45,11 +46,40 @@ Or use a key file:
     textconv = diff-kdbx --textconv --key-file ~/keepass.key
 ```
 
-A key file alone may suffice for some KDBX databases. If the database also requires a password, the env var must be set in the same environment as `git`.
+For a vault with a key file and no password, the key file alone is the key in textconv mode (no password variable needed). `--no-password` states it explicitly and ignores a stray `KDBX_DIFF_PASSWORD`:
+
+```gitconfig
+[diff "kdbx"]
+    textconv = diff-kdbx --textconv --no-password --key-file ~/keepass.key
+```
+
+If the database requires a password as well, the env var must be set in the same environment as `git`.
 
 ## Caching
 
-`cachetextconv = true` lets git cache the text representation of a file by blob hash, so repeated `git log -p` calls don't re-decrypt every commit. This is safe because the textconv output is deterministic.
+`cachetextconv = true` lets git cache the text representation of a file by blob hash, so repeated `git log -p` calls don't re-decrypt every commit (each dump unlocks the vault and derives a fingerprint key at the vault's own KDF cost). The cache is correct, because the dump is deterministic, but it is **opt-in for a reason**:
+
+git stores cached textconv output as ordinary blobs under
+`refs/notes/textconv/kdbx`. Those notes are not pushed by a plain `git push`,
+but a mirror push (`git push --mirror`), a mirror clone of that remote, and
+`git bundle create ... --all` do carry them. The dump holds everything that is
+not a secret in plaintext: titles, user names, URLs, Notes, tags, unprotected
+custom fields, attachment names. A repository whose `.kdbx` blobs are safe to
+publish therefore stops being safe once its textconv cache travels with it.
+
+Enable it per repository only where that is acceptable:
+
+```bash
+git config diff.kdbx.cachetextconv true
+```
+
+and drop the cache before any mirror push or bundle:
+
+```bash
+git update-ref -d refs/notes/textconv/kdbx
+```
+
+`diff-kdbx` refuses `--show-secrets` together with `--textconv`, so the usual textconv command cannot put protected values in the cache. Do not work around that: a textconv command such as `diff-kdbx --show-secrets --dump` would run, and git would cache (and a mirror would carry) every plaintext secret. Never use `--show-secrets` in a git configuration.
 
 ## Caveats
 

@@ -1,0 +1,279 @@
+---
+source: tests/snapshots.rs
+expression: "render_json(&cs, &JsonOptions::default())"
+---
+{
+  "format_version": 1,
+  "fingerprint_key": null,
+  "changes": [
+    {
+      "scope": "entry",
+      "uuid": "00000011-d1ff-4000-8000-000000000000",
+      "path": "/Personal/Bank",
+      "status": "modified",
+      "moved_from": null,
+      "changes": [
+        {
+          "property": {
+            "kind": "field",
+            "key": "URL"
+          },
+          "before": {
+            "type": "field",
+            "protected": false,
+            "text": "https://bank.example/v4"
+          },
+          "after": {
+            "type": "field",
+            "protected": false,
+            "text": "https://bank.example/v5"
+          }
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": "2026-01-01T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "Title"
+            }
+          },
+          "before": {
+            "type": "field",
+            "protected": false,
+            "text": "Bank"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": "2026-01-01T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "UserName"
+            }
+          },
+          "before": {
+            "type": "field",
+            "protected": false,
+            "text": "alice"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": "2026-01-01T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "Password"
+            }
+          },
+          "before": {
+            "type": "field",
+            "protected": true,
+            "sealed": "83b20c03773abb3999a1d9c2b26caa8130dad3f06fbad82c1dfc09eac7685729"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": "2026-01-01T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "URL"
+            }
+          },
+          "before": {
+            "type": "field",
+            "protected": false,
+            "text": "https://bank.example"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": "2026-01-01T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "quality_check"
+            }
+          },
+          "before": {
+            "type": "bool",
+            "value": true
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": "2026-01-01T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "time",
+              "key": "CreationTime"
+            }
+          },
+          "before": {
+            "type": "time",
+            "value": "2026-01-01T09:00:00Z"
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": "2026-01-01T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "time",
+              "key": "Expires"
+            }
+          },
+          "before": {
+            "type": "bool",
+            "value": false
+          },
+          "after": null
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": "2026-01-04T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "Title"
+            }
+          },
+          "before": null,
+          "after": {
+            "type": "field",
+            "protected": false,
+            "text": "Bank"
+          }
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": "2026-01-04T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "UserName"
+            }
+          },
+          "before": null,
+          "after": {
+            "type": "field",
+            "protected": false,
+            "text": "alice"
+          }
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": "2026-01-04T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "Password"
+            }
+          },
+          "before": null,
+          "after": {
+            "type": "field",
+            "protected": true,
+            "sealed": "83b20c03773abb3999a1d9c2b26caa8130dad3f06fbad82c1dfc09eac7685729"
+          }
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": "2026-01-04T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "field",
+              "key": "URL"
+            }
+          },
+          "before": null,
+          "after": {
+            "type": "field",
+            "protected": false,
+            "text": "https://bank.example/v4"
+          }
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": "2026-01-04T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "quality_check"
+            }
+          },
+          "before": null,
+          "after": {
+            "type": "bool",
+            "value": true
+          }
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": "2026-01-04T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "time",
+              "key": "CreationTime"
+            }
+          },
+          "before": null,
+          "after": {
+            "type": "time",
+            "value": "2026-01-01T09:00:00Z"
+          }
+        },
+        {
+          "property": {
+            "kind": "history",
+            "modified": "2026-01-04T09:00:00Z",
+            "index": 0,
+            "property": {
+              "kind": "time",
+              "key": "Expires"
+            }
+          },
+          "before": null,
+          "after": {
+            "type": "bool",
+            "value": false
+          }
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "entries_added": 0,
+    "entries_removed": 0,
+    "entries_modified": 1,
+    "entries_moved": 0,
+    "groups_added": 0,
+    "groups_removed": 0,
+    "groups_modified": 0,
+    "groups_moved": 0,
+    "node_properties": 15,
+    "database_properties": 0,
+    "suppressed": 11
+  },
+  "warnings": []
+}

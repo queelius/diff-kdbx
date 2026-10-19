@@ -1,0 +1,51 @@
+---
+source: tests/snapshots.rs
+expression: "dump(&after, &DumpOptions::default())"
+---
+DATABASE
+  Version: 4.1
+  Kdf: Argon2id
+  KdfMemory: 1048576
+  KdfIterations: 2
+  KdfParallelism: 1
+  KdfVersion: 19
+  OuterCipher: AES-256
+  InnerCipher: ChaCha20
+  Compression: gzip
+  DatabaseName: "diff-kdbx fixture"
+GROUP "/" [uuid:00000001-d1ff-4000-8000-000000000000]
+  Name: "Root"
+  CreationTime: 2026-01-01T09:00:00Z
+  Expires: false
+GROUP "/Personal/" [uuid:00000002-d1ff-4000-8000-000000000000]
+  Name: "Personal"
+  CreationTime: 2026-01-01T09:00:00Z
+  Expires: false
+ENTRY "/Personal/Bank" [uuid:00000011-d1ff-4000-8000-000000000000]
+  Title: "Bank"
+  UserName: "alice"
+  Password: <sealed:83b20c03>
+  URL: "https://bank.example"
+  QualityCheck: true
+  CreationTime: 2026-01-01T09:00:00Z
+  Expires: false
+ENTRY "/Personal/Email" [uuid:00000012-d1ff-4000-8000-000000000000]
+  Title: "Email"
+  UserName: "alice@example.com"
+  Password: <sealed:15245099>
+  "otp": <sealed:af5c6854>
+  QualityCheck: true
+  CreationTime: 2026-01-01T09:00:00Z
+  Expires: false
+GROUP "/Personal/Office/" [uuid:00000003-d1ff-4000-8000-000000000000]
+  Name: "Office"
+  CreationTime: 2026-01-01T09:00:00Z
+  Expires: false
+ENTRY "/Personal/Office/VPN" [uuid:00000013-d1ff-4000-8000-000000000000]
+  Title: "VPN"
+  UserName: "alice"
+  Password: <sealed:75fedb24>
+  URL: "https://vpn.example"
+  QualityCheck: true
+  CreationTime: 2026-01-01T09:00:00Z
+  Expires: false

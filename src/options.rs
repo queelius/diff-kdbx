@@ -1,58 +1,82 @@
-//! Options for diff and dump operations.
+//! Options for [`compute`](crate::compute) and [`dump`](crate::dump).
+//!
+//! Both take the same two choices with the same meaning, so `--strict` and
+//! `--include-recycle-bin` behave identically in diff and dump mode. Whether
+//! secrets are revealed is not an option here: it is decided when the
+//! snapshot is captured (`kdbx_core::model::Sealing`).
 
-use serde::{Deserialize, Serialize};
+/// Whether noise (see [`Property::is_noise`](crate::Property::is_noise)) is
+/// shown.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum Noise {
+    /// Leave noise out (count it in [`Summary::suppressed`](crate::Summary)).
+    #[default]
+    Suppress,
+    /// Show everything (`--strict`).
+    Show,
+}
 
-/// Options for `compute`. Default suppresses noisy timestamps and masks secrets.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Whether the recycle bin group and its subtree are shown.
+///
+/// The recycle bin is the group named by `<Meta><RecycleBinUUID>`. A
+/// recycle-bin UUID that names the root group is ignored: excluding the root
+/// would hide the whole vault.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum RecycleBin {
+    /// Leave the recycle bin out.
+    #[default]
+    Exclude,
+    /// Show it (`--include-recycle-bin`).
+    Include,
+}
+
+/// Options for [`compute`](crate::compute).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct DiffOptions {
-    /// If true, do not suppress noisy fields (LastAccessTime, UsageCount, etc.).
-    pub strict: bool,
-    /// If true, ChangeSet contains plaintext for protected fields. Default false.
-    pub show_secrets: bool,
-    /// If true, include the recycle bin group and its descendants in the diff.
-    /// Default false: the recycle bin is hidden from output.
-    pub include_recycle_bin: bool,
+    /// Whether noise is shown.
+    pub noise: Noise,
+    /// Whether the recycle bin is shown.
+    pub recycle_bin: RecycleBin,
 }
 
-/// Options for `dump`. Default suppresses noisy timestamps and masks secrets.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Options for [`dump`](crate::dump).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct DumpOptions {
-    pub strict: bool,
-    pub show_secrets: bool,
-    /// If true, include the recycle bin group and its descendants in the dump.
-    /// Default false: the recycle bin is hidden from output.
-    pub include_recycle_bin: bool,
+    /// Whether noise is shown.
+    pub noise: Noise,
+    /// Whether the recycle bin is shown.
+    pub recycle_bin: RecycleBin,
 }
 
-/// Options for renderers.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RenderOptions {
-    /// Use ANSI color when rendering text. Default false.
-    pub color: bool,
+impl DiffOptions {
+    /// Options with both choices given.
+    pub fn new(noise: Noise, recycle_bin: RecycleBin) -> Self {
+        DiffOptions { noise, recycle_bin }
+    }
+}
+
+impl DumpOptions {
+    /// Options with both choices given.
+    pub fn new(noise: Noise, recycle_bin: RecycleBin) -> Self {
+        DumpOptions { noise, recycle_bin }
+    }
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]
-    fn diff_options_default() {
-        let o = DiffOptions::default();
-        assert!(!o.strict);
-        assert!(!o.show_secrets);
-        assert!(!o.include_recycle_bin);
-    }
-
-    #[test]
-    fn dump_options_default() {
-        let o = DumpOptions::default();
-        assert!(!o.strict);
-        assert!(!o.show_secrets);
-        assert!(!o.include_recycle_bin);
-    }
-
-    #[test]
-    fn render_options_default_no_color() {
-        assert!(!RenderOptions::default().color);
+    fn defaults_suppress_noise_and_exclude_the_recycle_bin() {
+        assert_eq!(
+            DiffOptions::default(),
+            DiffOptions::new(Noise::Suppress, RecycleBin::Exclude)
+        );
+        assert_eq!(
+            DumpOptions::default(),
+            DumpOptions::new(Noise::Suppress, RecycleBin::Exclude)
+        );
     }
 }

@@ -1,0 +1,14 @@
+---
+source: tests/snapshots.rs
+expression: "render_text(&cs, &TextOptions::default())"
+---
+summary: entries +0/-0/~1 (0 moved), groups +0/-0/~0 (0 moved), properties 8, database 0, suppressed 7
+~ ENTRY "/Personal/Bank"
+  ~ URL: "https://bank.example" -> "https://bank.example/login"
+  + History[2026-01-01T09:00:00Z].Title: "Bank"
+  + History[2026-01-01T09:00:00Z].UserName: "alice"
+  + History[2026-01-01T09:00:00Z].Password: <sealed:83b20c03>
+  + History[2026-01-01T09:00:00Z].URL: "https://bank.example"
+  + History[2026-01-01T09:00:00Z].QualityCheck: true
+  + History[2026-01-01T09:00:00Z].CreationTime: 2026-01-01T09:00:00Z
+  + History[2026-01-01T09:00:00Z].Expires: false
